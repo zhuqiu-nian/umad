@@ -1,0 +1,43 @@
+# 忽略编译输出文件夹
+/target/
+
+# 忽略项目输出的数据库文件 /**/表示任意深度
+/**/*.000
+/**/*-db
+
+# 忽略数据集文件夹
+/dataset/
+/UMAD-DataSet
+
+# 忽略文档输出文件夹
+/doc/
+
+# 忽略idea项目文件
+.idea
+
+# 忽略测试文件夹
+
+
+# 忽略一些其他文件
+/**/*.zip
+/UMAD.iml
+/src/main/java/crb.java
+/src/main/java/MainUser.java
+/src/main/java/Temp.java
+/src/main/java/Test.java
+/out/
+/structure.jpg
+/src/META-INF/
+/Experiment1/
+/Experiment2/
+temp/
+
+# VS Studio files
+.vs/
+*.suo
+*.sqlite
+.vscode/launch.json
+
+# 用户设置
+.claude/settings.local.json
+
