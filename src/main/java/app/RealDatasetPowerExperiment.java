@@ -242,22 +242,23 @@ public class RealDatasetPowerExperiment
             throws Exception
     {
         String only = options.get("datasets");
+        Map<String, Double> radiusOverrides = radiusOverrides(options);
         List<DatasetSpec> datasets = new ArrayList<>();
-        addIfSelected(datasets, only, DatasetSpec.vector("clusteredvector",
-                "data/vector/clusteredvector-2d-100k-100c.txt", 2, 0.15));
-        addIfSelected(datasets, only, DatasetSpec.vector("hawii",
-                "data/vector/hawii.txt", 2, 0.05));
-        addIfSelected(datasets, only, DatasetSpec.vector("texas",
-                "data/vector/texas.txt", 2, 0.05));
-        addIfSelected(datasets, only, DatasetSpec.vector("uniform5",
-                "data/vector/Uniform-5-d-vector.txt", 5, 0.50));
-        addIfSelected(datasets, only, DatasetSpec.vector("uniform20",
-                "data/vector/Uniform-20-d-vector.txt", 20, 1.20));
-        addIfSelected(datasets, only, DatasetSpec.image("image", "data", 0.05));
-        addIfSelected(datasets, only, DatasetSpec.english("english",
-                "data/English.dic", 2.0));
-        addIfSelected(datasets, only, DatasetSpec.protein("protein",
-                "data/yeast.aa", 5, 2.0));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.vector("clusteredvector",
+                "data/vector/clusteredvector-2d-100k-100c.txt", 2, 0.15), radiusOverrides));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.vector("hawii",
+                "data/vector/hawii.txt", 2, 0.05), radiusOverrides));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.vector("texas",
+                "data/vector/texas.txt", 2, 0.05), radiusOverrides));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.vector("uniform5",
+                "data/vector/Uniform-5-d-vector.txt", 5, 0.50), radiusOverrides));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.vector("uniform20",
+                "data/vector/Uniform-20-d-vector.txt", 20, 1.20), radiusOverrides));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.image("image", "data", 0.05), radiusOverrides));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.english("english",
+                "data/English.dic", 2.0), radiusOverrides));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.protein("protein",
+                "data/yeast.aa", 5, 2.0), radiusOverrides));
 
         for (DatasetSpec dataset : datasets)
         {
@@ -265,6 +266,42 @@ public class RealDatasetPowerExperiment
             dataset.querySizeHint = querySize;
         }
         return datasets;
+    }
+
+    private static DatasetSpec withRadiusOverride(DatasetSpec spec,
+                                                  Map<String, Double> radiusOverrides)
+    {
+        Double radius = radiusOverrides.get(spec.name.toLowerCase(Locale.ROOT));
+        if (radius == null)
+        {
+            radius = radiusOverrides.get("*");
+        }
+        return radius == null ? spec : spec.withRadius(radius);
+    }
+
+    private static Map<String, Double> radiusOverrides(Map<String, String> options)
+    {
+        Map<String, Double> overrides = new HashMap<>();
+        if (options.containsKey("radius"))
+        {
+            overrides.put("*", Double.parseDouble(options.get("radius")));
+        }
+        String raw = options.get("radiusOverrides");
+        if (raw == null || raw.trim().isEmpty())
+        {
+            return overrides;
+        }
+        for (String entry : raw.split(","))
+        {
+            String[] parts = entry.trim().split(":");
+            if (parts.length != 2)
+            {
+                throw new IllegalArgumentException("radiusOverrides entry must be name:value, got " + entry);
+            }
+            overrides.put(parts[0].trim().toLowerCase(Locale.ROOT),
+                    Double.parseDouble(parts[1].trim()));
+        }
+        return overrides;
     }
 
     private static void addIfSelected(List<DatasetSpec> datasets, String only,
@@ -465,6 +502,11 @@ public class RealDatasetPowerExperiment
                                    double radius)
         {
             return new DatasetSpec(name, "protein", path, fragmentLength, radius);
+        }
+
+        DatasetSpec withRadius(double newRadius)
+        {
+            return new DatasetSpec(name, type, path, dimOrFragmentLength, newRadius);
         }
 
         Table loadTable(String indexPrefix, int size) throws Exception
