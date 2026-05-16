@@ -186,6 +186,8 @@ public class PowerDistanceBoundaryOptimizer
         if (queryAware)
         {
             double[] weights = new double[]{w1, w2};
+            double[][][] childRanges = childPivotDistanceRanges(cache.dataDistances1,
+                    cache.dataDistances2, scores, thresholds, counts.partitionSizes.length);
             for (int i = 0; i < cache.queryCount; i++)
             {
                 PowerDistanceTransform.Interval raw1 =
@@ -210,6 +212,8 @@ public class PowerDistanceBoundaryOptimizer
                             ? Double.POSITIVE_INFINITY : thresholds[partition];
                     boolean intersects = !(bounds.getHigh() < low - comparisonEpsilon
                             || bounds.getLow() > high + comparisonEpsilon);
+                    intersects = intersects && rawIntersects(childRanges, partition,
+                            raw1, raw2, comparisonEpsilon);
                     if (intersects)
                     {
                         visited += counts.partitionSizes[partition];
@@ -233,6 +237,82 @@ public class PowerDistanceBoundaryOptimizer
         return new Result(rho, w1, w2, thresholds, counts.partitionSizes,
                 queryAware, score, balanceScore(counts.partitionSizes),
                 margin, true, false);
+    }
+
+    private static double[][][] childPivotDistanceRanges(double[] distances1,
+                                                         double[] distances2,
+                                                         double[] scores,
+                                                         double[] thresholds,
+                                                         int numPartitions)
+    {
+        double[][][] ranges = new double[numPartitions][2][2];
+        for (int partition = 0; partition < numPartitions; partition++)
+        {
+            for (int pivot = 0; pivot < 2; pivot++)
+            {
+                ranges[partition][pivot][0] = Double.POSITIVE_INFINITY;
+                ranges[partition][pivot][1] = Double.NEGATIVE_INFINITY;
+            }
+        }
+        for (int i = 0; i < scores.length; i++)
+        {
+            int partition = partitionIndex(scores[i], thresholds);
+            updateRange(ranges[partition][0], distances1[i]);
+            updateRange(ranges[partition][1], distances2[i]);
+        }
+        for (int partition = 0; partition < numPartitions; partition++)
+        {
+            for (int pivot = 0; pivot < 2; pivot++)
+            {
+                if (ranges[partition][pivot][0] == Double.POSITIVE_INFINITY)
+                {
+                    ranges[partition][pivot][0] = 0.0;
+                    ranges[partition][pivot][1] = Double.POSITIVE_INFINITY;
+                }
+            }
+        }
+        return ranges;
+    }
+
+    private static int partitionIndex(double score, double[] thresholds)
+    {
+        for (int i = 0; i < thresholds.length; i++)
+        {
+            if (score <= thresholds[i])
+            {
+                return i;
+            }
+        }
+        return thresholds.length;
+    }
+
+    private static void updateRange(double[] range, double value)
+    {
+        if (value < range[0])
+        {
+            range[0] = value;
+        }
+        if (value > range[1])
+        {
+            range[1] = value;
+        }
+    }
+
+    private static boolean rawIntersects(double[][][] childRanges, int partition,
+                                         PowerDistanceTransform.Interval raw1,
+                                         PowerDistanceTransform.Interval raw2,
+                                         double eps)
+    {
+        return intervalIntersects(raw1, childRanges[partition][0], eps)
+                && intervalIntersects(raw2, childRanges[partition][1], eps);
+    }
+
+    private static boolean intervalIntersects(PowerDistanceTransform.Interval queryRange,
+                                              double[] childRange,
+                                              double eps)
+    {
+        return !(queryRange.getHigh() < childRange[0] - eps
+                || queryRange.getLow() > childRange[1] + eps);
     }
 
     private static boolean balanced(int[] partitionSizes, int size, double minBalance,

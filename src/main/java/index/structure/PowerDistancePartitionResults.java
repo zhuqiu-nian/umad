@@ -15,6 +15,7 @@ public class PowerDistancePartitionResults extends PartitionResults
     private final double w2;
     private final double[] thresholds;
     private final double comparisonEpsilon;
+    private final double[][][] childPivotDistanceRanges;
 
     public PowerDistancePartitionResults(List<List<? extends IndexObject>> subDataList,
                                          IndexObject[] pivotSet,
@@ -29,6 +30,7 @@ public class PowerDistancePartitionResults extends PartitionResults
         this.w2 = w2;
         this.thresholds = new double[]{tau};
         this.comparisonEpsilon = comparisonEpsilon;
+        this.childPivotDistanceRanges = null;
     }
 
     public PowerDistancePartitionResults(List<List<? extends IndexObject>> subDataList,
@@ -37,6 +39,17 @@ public class PowerDistancePartitionResults extends PartitionResults
                                          double w1, double w2, double[] thresholds,
                                          double comparisonEpsilon)
     {
+        this(subDataList, pivotSet, rho, epsilonDistance, w1, w2, thresholds,
+                comparisonEpsilon, null);
+    }
+
+    public PowerDistancePartitionResults(List<List<? extends IndexObject>> subDataList,
+                                         IndexObject[] pivotSet,
+                                         double rho, double epsilonDistance,
+                                         double w1, double w2, double[] thresholds,
+                                         double comparisonEpsilon,
+                                         double[][][] childPivotDistanceRanges)
+    {
         super(subDataList, pivotSet);
         this.rho = rho;
         this.epsilonDistance = epsilonDistance;
@@ -44,6 +57,7 @@ public class PowerDistancePartitionResults extends PartitionResults
         this.w2 = w2;
         this.thresholds = thresholds.clone();
         this.comparisonEpsilon = comparisonEpsilon;
+        this.childPivotDistanceRanges = childPivotDistanceRanges;
     }
 
     public double getRho()
@@ -65,7 +79,8 @@ public class PowerDistancePartitionResults extends PartitionResults
     public InternalNode getInstanceOfInternalNode(IndexObject[] pivotSet, long[] childAddress)
     {
         return new PowerDistanceInternalNode(pivotSet, getDataSize(), childAddress,
-                rho, epsilonDistance, w1, w2, thresholds, comparisonEpsilon);
+                rho, epsilonDistance, w1, w2, thresholds, comparisonEpsilon,
+                childPivotDistanceRanges);
     }
 
     @Override

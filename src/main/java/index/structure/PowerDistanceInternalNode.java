@@ -23,6 +23,7 @@ public class PowerDistanceInternalNode extends InternalNode
     private double w2;
     private double[] thresholds;
     private double comparisonEpsilon;
+    private double[][][] childPivotDistanceRanges;
 
     public PowerDistanceInternalNode()
     {
@@ -49,12 +50,23 @@ public class PowerDistanceInternalNode extends InternalNode
         this.w2 = w2;
         this.thresholds = new double[]{tau};
         this.comparisonEpsilon = comparisonEpsilon;
+        this.childPivotDistanceRanges = new double[0][][];
     }
 
     public PowerDistanceInternalNode(IndexObject[] pivots, int size, long[] childAddresses,
                                      double rho, double epsilonDistance,
                                      double w1, double w2, double[] thresholds,
                                      double comparisonEpsilon)
+    {
+        this(pivots, size, childAddresses, rho, epsilonDistance, w1, w2,
+                thresholds, comparisonEpsilon, null);
+    }
+
+    public PowerDistanceInternalNode(IndexObject[] pivots, int size, long[] childAddresses,
+                                     double rho, double epsilonDistance,
+                                     double w1, double w2, double[] thresholds,
+                                     double comparisonEpsilon,
+                                     double[][][] childPivotDistanceRanges)
     {
         super(pivots, size, childAddresses);
         if (pivots.length != 2)
@@ -79,6 +91,7 @@ public class PowerDistanceInternalNode extends InternalNode
         this.w2 = w2;
         this.thresholds = thresholds.clone();
         this.comparisonEpsilon = comparisonEpsilon;
+        this.childPivotDistanceRanges = cloneRanges(childPivotDistanceRanges);
     }
 
     public double getRho()
@@ -131,6 +144,46 @@ public class PowerDistanceInternalNode extends InternalNode
         return new PowerDistanceTransform(rho, epsilonDistance);
     }
 
+    public boolean hasChildPivotDistanceRanges()
+    {
+        return childPivotDistanceRanges.length == getNumChildren();
+    }
+
+    public double[] getChildPivotDistanceRange(int childIndex, int pivotIndex)
+    {
+        return childPivotDistanceRanges[childIndex][pivotIndex].clone();
+    }
+
+    private double[][][] cloneRanges(double[][][] ranges)
+    {
+        if (ranges == null)
+        {
+            return new double[0][][];
+        }
+        if (ranges.length != getNumChildren())
+        {
+            throw new IllegalArgumentException("child range count must match child count");
+        }
+        double[][][] copy = new double[ranges.length][][];
+        for (int child = 0; child < ranges.length; child++)
+        {
+            if (ranges[child] == null || ranges[child].length != getNumPivots())
+            {
+                throw new IllegalArgumentException("each child range must include every pivot");
+            }
+            copy[child] = new double[ranges[child].length][];
+            for (int pivot = 0; pivot < ranges[child].length; pivot++)
+            {
+                if (ranges[child][pivot] == null || ranges[child][pivot].length != 2)
+                {
+                    throw new IllegalArgumentException("each pivot range must be [low, high]");
+                }
+                copy[child][pivot] = ranges[child][pivot].clone();
+            }
+        }
+        return copy;
+    }
+
     @Override
     public void writeExternal(ObjectOutput out) throws IOException
     {
@@ -145,6 +198,16 @@ public class PowerDistanceInternalNode extends InternalNode
             out.writeDouble(threshold);
         }
         out.writeDouble(comparisonEpsilon);
+        out.writeInt(childPivotDistanceRanges.length);
+        for (double[][] childRanges : childPivotDistanceRanges)
+        {
+            out.writeInt(childRanges.length);
+            for (double[] pivotRange : childRanges)
+            {
+                out.writeDouble(pivotRange[0]);
+                out.writeDouble(pivotRange[1]);
+            }
+        }
     }
 
     @Override
@@ -161,5 +224,17 @@ public class PowerDistanceInternalNode extends InternalNode
             thresholds[i] = in.readDouble();
         }
         comparisonEpsilon = in.readDouble();
+        int childRangeCount = in.readInt();
+        childPivotDistanceRanges = new double[childRangeCount][][];
+        for (int child = 0; child < childRangeCount; child++)
+        {
+            int pivotCount = in.readInt();
+            childPivotDistanceRanges[child] = new double[pivotCount][2];
+            for (int pivot = 0; pivot < pivotCount; pivot++)
+            {
+                childPivotDistanceRanges[child][pivot][0] = in.readDouble();
+                childPivotDistanceRanges[child][pivot][1] = in.readDouble();
+            }
+        }
     }
 }

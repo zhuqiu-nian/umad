@@ -48,19 +48,42 @@ public class PowerDistanceRangeCursor extends RangeCursor
         }
 
         PowerDistanceTransform transform = pdNode.getTransform();
+        Interval[] rawIntervals = new Interval[2];
         Interval[] intervals = new Interval[2];
         for (int i = 0; i < 2; i++)
         {
-            Interval raw = PowerDistanceTransform.queryDistanceInterval(queryToPivotDistance[i], radius);
-            intervals[i] = transform.transformQueryInterval(raw.getLow(), raw.getHigh());
+            rawIntervals[i] = PowerDistanceTransform.queryDistanceInterval(queryToPivotDistance[i], radius);
+            intervals[i] = transform.transformQueryInterval(rawIntervals[i].getLow(), rawIntervals[i].getHigh());
+        }
+
+        double eps = pdNode.getComparisonEpsilon();
+        if (pdNode.hasChildPivotDistanceRanges())
+        {
+            for (int child = 0; child < actions.length; child++)
+            {
+                for (int pivot = 0; pivot < 2; pivot++)
+                {
+                    double[] childRange = pdNode.getChildPivotDistanceRange(child, pivot);
+                    boolean disjoint = rawIntervals[pivot].getHigh() < childRange[0] - eps
+                            || rawIntervals[pivot].getLow() > childRange[1] + eps;
+                    if (disjoint)
+                    {
+                        actions[child] = NodeSearchAction.RESULTNONE;
+                        break;
+                    }
+                }
+            }
         }
 
         Interval scoreBounds = PowerDistanceTransform.linearScoreBounds(pdNode.getWeights(), intervals);
         double[] thresholds = pdNode.getThresholds();
-        double eps = pdNode.getComparisonEpsilon();
 
         for (int i = 0; i < actions.length; i++)
         {
+            if (actions[i] == NodeSearchAction.RESULTNONE)
+            {
+                continue;
+            }
             double childLow = i == 0 ? Double.NEGATIVE_INFINITY : thresholds[i - 1];
             double childHigh = i == actions.length - 1 ? Double.POSITIVE_INFINITY : thresholds[i];
             boolean strictlyBelowChild = scoreBounds.getHigh() < childLow - eps;

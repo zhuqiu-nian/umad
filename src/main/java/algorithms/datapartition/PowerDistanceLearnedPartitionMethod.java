@@ -107,7 +107,8 @@ public class PowerDistanceLearnedPartitionMethod implements PartitionMethod, Ser
                     first, size, numPartitions);
             return new PowerDistancePartitionResults(subDataList, pivots,
                     model.getRho(), config.getEpsilonDistance(),
-                    0.0, 0.0, new double[0], config.getComparisonEpsilon());
+                    0.0, 0.0, new double[0], config.getComparisonEpsilon(),
+                    childPivotDistanceRanges(metric, pivots, subDataList));
         }
 
         List<List<? extends IndexObject>> subDataList = new ArrayList<>(numPartitions);
@@ -115,7 +116,8 @@ public class PowerDistanceLearnedPartitionMethod implements PartitionMethod, Ser
         return new PowerDistancePartitionResults(subDataList, pivots,
                 model.getRho(), config.getEpsilonDistance(),
                 model.getW1(), model.getW2(), thresholds,
-                config.getComparisonEpsilon());
+                config.getComparisonEpsilon(),
+                childPivotDistanceRanges(metric, pivots, subDataList));
     }
 
     private int partitionIndex(double score, double[] thresholds)
@@ -160,6 +162,44 @@ public class PowerDistanceLearnedPartitionMethod implements PartitionMethod, Ser
             partition.add(data.get(first + i));
         }
         return partitions;
+    }
+
+    private double[][][] childPivotDistanceRanges(Metric metric, IndexObject[] pivots,
+                                                  List<List<? extends IndexObject>> partitions)
+    {
+        double[][][] ranges = new double[partitions.size()][pivots.length][2];
+        for (int child = 0; child < partitions.size(); child++)
+        {
+            for (int pivot = 0; pivot < pivots.length; pivot++)
+            {
+                ranges[child][pivot][0] = Double.POSITIVE_INFINITY;
+                ranges[child][pivot][1] = Double.NEGATIVE_INFINITY;
+            }
+            for (IndexObject x : partitions.get(child))
+            {
+                for (int pivot = 0; pivot < pivots.length; pivot++)
+                {
+                    double distance = metric.getDistance(x, pivots[pivot]);
+                    if (distance < ranges[child][pivot][0])
+                    {
+                        ranges[child][pivot][0] = distance;
+                    }
+                    if (distance > ranges[child][pivot][1])
+                    {
+                        ranges[child][pivot][1] = distance;
+                    }
+                }
+            }
+            for (int pivot = 0; pivot < pivots.length; pivot++)
+            {
+                if (ranges[child][pivot][0] == Double.POSITIVE_INFINITY)
+                {
+                    ranges[child][pivot][0] = 0.0;
+                    ranges[child][pivot][1] = Double.POSITIVE_INFINITY;
+                }
+            }
+        }
+        return ranges;
     }
 
     @Override
