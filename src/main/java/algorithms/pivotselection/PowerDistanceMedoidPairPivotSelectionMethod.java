@@ -96,6 +96,7 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
         PowerDistanceBoundaryOptimizer.Result bestResult = null;
         int bestI = candidates[0];
         int bestJ = candidates[1];
+        double bestPairDistance = 0.0;
         double maxPairDistance = maxPairDistance(metric, subset, candidates);
         double minPairDistance = maxPairDistance * 0.25;
         for (int a = 0; a < candidates.length; a++)
@@ -115,11 +116,13 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
                 PowerDistanceBoundaryOptimizer.Result result = optimizer.optimize(
                         metric, pivots, subset, 0, subset.size(),
                         trainingQueries, queryRadius, config, numPartitions);
-                if (better(result, bestResult))
+                if (better(result, bestResult)
+                        || (equivalent(result, bestResult) && pairDistance > bestPairDistance))
                 {
                     bestResult = result;
                     bestI = i;
                     bestJ = j;
+                    bestPairDistance = pairDistance;
                 }
             }
         }
@@ -148,8 +151,10 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
     private int[] medoidCandidates(Metric metric, List<? extends IndexObject> data)
     {
         int candidateCount = Math.min(config.getMedoidCandidateCount(), data.size());
-        int[] centers = PivotSelectionMethods.FFT.selectPivots(metric, data,
-                candidateCount);
+        int candidateLimit = Math.min(data.size(), Math.max(candidateCount, candidateCount * 2));
+        int[] fftCenters = PivotSelectionMethods.FFT.selectPivots(metric, data,
+                candidateLimit);
+        int[] centers = Arrays.copyOf(fftCenters, Math.min(candidateCount, fftCenters.length));
         if (centers.length == 0)
         {
             return new int[0];
@@ -173,20 +178,15 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
         }
 
         Set<Integer> unique = new LinkedHashSet<>();
+        for (int center : fftCenters)
+        {
+            unique.add(center);
+        }
         for (int center : centers)
         {
             unique.add(center);
         }
-        for (int center : PivotSelectionMethods.FFT.selectPivots(metric, data,
-                candidateCount))
-        {
-            unique.add(center);
-            if (unique.size() >= candidateCount)
-            {
-                break;
-            }
-        }
-        for (int i = 0; i < data.size() && unique.size() < candidateCount; i++)
+        for (int i = 0; i < data.size() && unique.size() < candidateLimit; i++)
         {
             unique.add(i);
         }
@@ -289,6 +289,18 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
             return false;
         }
         return candidate.getMarginScore() > best.getMarginScore() + 1e-12;
+    }
+
+    private boolean equivalent(PowerDistanceBoundaryOptimizer.Result candidate,
+                               PowerDistanceBoundaryOptimizer.Result best)
+    {
+        if (candidate == null || best == null)
+        {
+            return false;
+        }
+        return Math.abs(candidate.getScore() - best.getScore()) <= 1e-12
+                && Math.abs(candidate.getBalanceScore() - best.getBalanceScore()) <= 1e-12
+                && Math.abs(candidate.getMarginScore() - best.getMarginScore()) <= 1e-12;
     }
 
     @Override

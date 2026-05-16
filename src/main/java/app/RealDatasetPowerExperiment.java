@@ -451,14 +451,41 @@ public class RealDatasetPowerExperiment
 
     private static PowerDistanceLearningConfig learningConfig(Map<String, String> options)
     {
+        String preset = options.getOrDefault("learningPreset", "medium").toLowerCase(Locale.ROOT);
+        String defaultRhoGrid = "-4,-2,-1,1,2,4";
+        String defaultTauQuantiles = "0.35,0.40,0.45,0.50,0.55,0.60,0.65";
+        String defaultAngleCount = "12";
+        String defaultTrainingQuerySampleSize = "128";
+        String defaultMedoidCandidateCount = "6";
+        String defaultMedoidIterations = "1";
+        if ("strong".equals(preset))
+        {
+            defaultRhoGrid = "-4,-2,-1,-0.5,0.5,1,2,4";
+            defaultAngleCount = "16";
+            defaultTrainingQuerySampleSize = "256";
+            defaultMedoidCandidateCount = "8";
+            defaultMedoidIterations = "2";
+        }
+        else if (!"medium".equals(preset) && !"fast".equals(preset))
+        {
+            throw new IllegalArgumentException("learningPreset must be fast, medium, or strong");
+        }
+        if ("fast".equals(preset))
+        {
+            defaultRhoGrid = "-4,-2,2,4";
+            defaultTauQuantiles = "0.4,0.5,0.6";
+            defaultAngleCount = "8";
+            defaultTrainingQuerySampleSize = "64";
+            defaultMedoidCandidateCount = "4";
+        }
         return new PowerDistanceLearningConfig(
-                parseDoubles(options.getOrDefault("learningRhoGrid", "-4,-2,2,4")),
-                Integer.parseInt(options.getOrDefault("angleCount", "8")),
-                parseDoubles(options.getOrDefault("tauQuantiles", "0.4,0.5,0.6")),
+                parseDoubles(options.getOrDefault("learningRhoGrid", defaultRhoGrid)),
+                Integer.parseInt(options.getOrDefault("angleCount", defaultAngleCount)),
+                parseDoubles(options.getOrDefault("tauQuantiles", defaultTauQuantiles)),
                 Double.parseDouble(options.getOrDefault("minBalance", "0.25")),
-                Integer.parseInt(options.getOrDefault("trainingQuerySampleSize", "64")),
-                Integer.parseInt(options.getOrDefault("medoidCandidateCount", "4")),
-                Integer.parseInt(options.getOrDefault("medoidIterations", "1")),
+                Integer.parseInt(options.getOrDefault("trainingQuerySampleSize", defaultTrainingQuerySampleSize)),
+                Integer.parseInt(options.getOrDefault("medoidCandidateCount", defaultMedoidCandidateCount)),
+                Integer.parseInt(options.getOrDefault("medoidIterations", defaultMedoidIterations)),
                 PowerDistanceTransform.DEFAULT_EPSILON_DISTANCE,
                 PowerDistanceTransform.DEFAULT_COMPARISON_EPSILON);
     }
