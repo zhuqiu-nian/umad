@@ -1194,6 +1194,145 @@ public class IndexBuilder
         return indexPrefix;
     }
 
+    public static String buildApollonianIndexOnEnglish(TableManager tableManager, String dataFileName, int maxDataSize,
+                                                       PivotSelectionMethod pivotSelectionMethod,
+                                                       ApollonianPartitionMethods partitionMethod,
+                                                       int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("at", "english", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 3, maxLeafSize, mode);
+        Table dataTable = new StringTable(dataFileName, indexPrefix, maxDataSize);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadApollonianIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    // ========== IAT Index build methods ==========
+
+    public static void bulkLoadIATIndex(Table dataTable, PivotSelectionMethod pivotSelectionMethod,
+                                        IATPartitionMethods partitionMethod, int maxLeafSize,
+                                        HierarchicalPivotSelectionMode mode)
+    {
+        dataTable.buildIATIndex(pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+    }
+
+    public static String buildIATIndexOnVector(TableManager tableManager, String dataFileName,
+                                               int dim, int maxDataSize,
+                                               PivotSelectionMethod pivotSelectionMethod,
+                                               IATPartitionMethods partitionMethod,
+                                               int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("iat", "vector", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 3, maxLeafSize, mode);
+        Table dataTable = new DoubleVectorTable(dataFileName, indexPrefix, maxDataSize, dim);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadIATIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildIATIndexOnDNA(TableManager tableManager, String dataFileName,
+                                            int fragLength, int maxDataSize,
+                                            PivotSelectionMethod pivotSelectionMethod,
+                                            IATPartitionMethods partitionMethod,
+                                            int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("iat", "dna", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 3, maxLeafSize, mode);
+        Table dataTable = new DNATable(dataFileName, indexPrefix, maxDataSize, fragLength);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadIATIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildIATIndexOnRNA(TableManager tableManager, String dataFileName,
+                                            int fragLength, int maxDataSize,
+                                            PivotSelectionMethod pivotSelectionMethod,
+                                            IATPartitionMethods partitionMethod,
+                                            int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("iat", "rna", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 3, maxLeafSize, mode);
+        Table dataTable = new RNATable(dataFileName, indexPrefix, maxDataSize, fragLength);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadIATIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildIATIndexOnProtein(TableManager tableManager, String dataFileName,
+                                                int fragLength, int maxDataSize,
+                                                PivotSelectionMethod pivotSelectionMethod,
+                                                IATPartitionMethods partitionMethod,
+                                                int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("iat", "protein", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 3, maxLeafSize, mode);
+        Table dataTable = new PeptideTable(dataFileName, indexPrefix, maxDataSize, fragLength);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadIATIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildIATIndexOnMS(TableManager tableManager, String dataFileName, int maxDataSize,
+                                           PivotSelectionMethod pivotSelectionMethod,
+                                           IATPartitionMethods partitionMethod,
+                                           int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("iat", "ms", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 3, maxLeafSize, mode);
+        Table dataTable = new SpectraTable(dataFileName, indexPrefix, maxDataSize, null);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadIATIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildIATIndexOnMsMs(TableManager tableManager, String dataFileName, int maxDataSize,
+                                             PivotSelectionMethod pivotSelectionMethod,
+                                             IATPartitionMethods partitionMethod,
+                                             int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("iat", "msms", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 3, maxLeafSize, mode);
+        Table dataTable = new SpectraWithPrecursorMassTable(dataFileName, indexPrefix, maxDataSize);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadIATIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildIATIndexOnImage(TableManager tableManager, String dataFileName, int maxDataSize,
+                                              PivotSelectionMethod pivotSelectionMethod,
+                                              IATPartitionMethods partitionMethod,
+                                              int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("iat", "image", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 3, maxLeafSize, mode);
+        Table dataTable = new ImageTable(dataFileName, indexPrefix, maxDataSize);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadIATIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildIATIndexOnEnglish(TableManager tableManager, String dataFileName, int maxDataSize,
+                                                PivotSelectionMethod pivotSelectionMethod,
+                                                IATPartitionMethods partitionMethod,
+                                                int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("iat", "english", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 3, maxLeafSize, mode);
+        Table dataTable = new StringTable(dataFileName, indexPrefix, maxDataSize);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadIATIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
     // ========== RGH Index 构建方法 ==========
 
     public static void bulkLoadRGHIndex(Table dataTable, PivotSelectionMethod pivotSelectionMethod,
@@ -1201,6 +1340,44 @@ public class IndexBuilder
                                       HierarchicalPivotSelectionMode mode)
     {
         dataTable.buildRGHIndex(pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+    }
+
+    /**
+     * Build a Power-Distance pivot-space index on an already-created table.
+     */
+    public static void bulkLoadPowerDistanceIndex(Table dataTable,
+                                                  PivotSelectionMethod pivotSelectionMethod,
+                                                  PartitionMethod partitionMethod,
+                                                  int maxLeafSize,
+                                                  HierarchicalPivotSelectionMode mode,
+                                                  IndexObject[] pivotSet)
+    {
+        dataTable.buildPowerDistanceIndex(pivotSelectionMethod, partitionMethod, maxLeafSize, mode, pivotSet);
+    }
+
+    public static void bulkLoadPowerDistanceIndex(Table dataTable,
+                                                  PivotSelectionMethod pivotSelectionMethod,
+                                                  PartitionMethod partitionMethod,
+                                                  int numPartitions,
+                                                  int maxLeafSize,
+                                                  HierarchicalPivotSelectionMode mode,
+                                                  IndexObject[] pivotSet)
+    {
+        dataTable.buildPowerDistanceIndex(pivotSelectionMethod, partitionMethod,
+                numPartitions, maxLeafSize, mode, pivotSet);
+    }
+
+    /**
+     * Build a Log-Distance pivot-space index on an already-created table.
+     */
+    public static void bulkLoadLogDistanceIndex(Table dataTable,
+                                                PivotSelectionMethod pivotSelectionMethod,
+                                                PartitionMethod partitionMethod,
+                                                int maxLeafSize,
+                                                HierarchicalPivotSelectionMode mode,
+                                                IndexObject[] pivotSet)
+    {
+        dataTable.buildLogDistanceIndex(pivotSelectionMethod, partitionMethod, maxLeafSize, mode, pivotSet);
     }
 
     // 在 vector 上构建 RGH 索引
@@ -1264,6 +1441,83 @@ public class IndexBuilder
         dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
         tableManager.putTable(dataTable);
         bulkLoadRGHIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildRGHIndexOnImage(TableManager tableManager, String dataFileName, int maxDataSize,
+                                             PivotSelectionMethod pivotSelectionMethod,
+                                             RGHPartitionMethods partitionMethod,
+                                             int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("rgh", "image", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 2, maxLeafSize, mode);
+        Table dataTable = new ImageTable(dataFileName, indexPrefix, maxDataSize);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadRGHIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildRGHIndexOnEnglish(TableManager tableManager, String dataFileName, int maxDataSize,
+                                               PivotSelectionMethod pivotSelectionMethod,
+                                               RGHPartitionMethods partitionMethod,
+                                               int maxLeafSize, HierarchicalPivotSelectionMode mode) throws IOException
+    {
+        String indexPrefix = getIndexPrefix("rgh", "english", maxDataSize, pivotSelectionMethod, 2,
+                partitionMethod.name(), 2, maxLeafSize, mode);
+        Table dataTable = new StringTable(dataFileName, indexPrefix, maxDataSize);
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadRGHIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
+        return indexPrefix;
+    }
+
+    public static String buildVPIndexOnEnglish(TableManager tableManager, String dataFileName, int maxDataSize,
+                                              PivotSelectionMethod pivotSelectionMethod,
+                                              int numPivots, VPPartitionMethods vpPartitionMethods, int vpPartitionNum,
+                                              int vpMaxLeafSize, HierarchicalPivotSelectionMode mode,
+                                              String pivotsFileName) throws IOException
+    {
+        Table pivotTable;
+        IndexObject[] pivotSet = null;
+        String indexPrefix = getIndexPrefix("vp", "english",
+                maxDataSize, pivotSelectionMethod, numPivots,
+                vpPartitionMethods.name(), vpPartitionNum, vpMaxLeafSize, mode);
+        Table dataTable = new StringTable(dataFileName, indexPrefix, maxDataSize);
+        if (pivotsFileName != null)
+        {
+            pivotTable = new StringTable(pivotsFileName, "pivot", maxDataSize);
+            tableManager.putTable(pivotTable);
+            pivotSet = pivotTable.getData().toArray(new IndexObject[0]);
+        }
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadVPIndex(dataTable, pivotSelectionMethod, numPivots,
+                vpPartitionMethods, vpPartitionNum, vpMaxLeafSize, mode, pivotSet);
+        return indexPrefix;
+    }
+
+    public static String buildGHIndexOnEnglish(TableManager tableManager, String dataFileName, int maxDataSize,
+                                              PivotSelectionMethod pivotSelectionMethod,
+                                              GHPartitionMethods partitionMethod,
+                                              int maxLeafSize, HierarchicalPivotSelectionMode mode,
+                                              String pivotsFileName) throws IOException
+    {
+        Table pivotTable;
+        IndexObject[] pivotSet = null;
+        String indexPrefix = getIndexPrefix("gh", "english",
+                maxDataSize, pivotSelectionMethod, null,
+                partitionMethod.name(), null, maxLeafSize, mode);
+        Table dataTable = new StringTable(dataFileName, indexPrefix, maxDataSize);
+        if (pivotsFileName != null)
+        {
+            pivotTable = new StringTable(pivotsFileName, "pivot", maxDataSize);
+            tableManager.putTable(pivotTable);
+            pivotSet = pivotTable.getData().toArray(new IndexObject[0]);
+        }
+        dataTable.setMetric(new CountedMetric(dataTable.getMetric()));
+        tableManager.putTable(dataTable);
+        bulkLoadGHIndex(dataTable, pivotSelectionMethod, partitionMethod, maxLeafSize, mode);
         return indexPrefix;
     }
 }

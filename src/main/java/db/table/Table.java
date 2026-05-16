@@ -520,6 +520,39 @@ public abstract class Table implements Serializable
      * @param mode          层次化支撑点选取方法{@link HierarchicalPivotSelectionMode}
      * @see RGHIndex
      */
+    /**
+     * Build an IAT index.
+     */
+    public void buildIATIndex(PivotSelectionMethod psm, PartitionMethod pm, int maxLeafSize,
+                              HierarchicalPivotSelectionMode mode)
+    {
+        double startTime, endTime, buildTime;
+
+        startTime = System.currentTimeMillis();
+
+        compressData();
+        if (metric instanceof CountedMetric)
+            ((CountedMetric) metric).clear();
+
+        int numPivots = 2;
+        int numPartitions = 3;
+
+        index = new IATIndex(indexPrefix, this.data, metric, maxLeafSize, numPivots, numPartitions, mode, psm, pm);
+
+        index.buildTree();
+
+        endTime   = System.currentTimeMillis();
+        buildTime = (endTime - startTime) / 1000.00;
+
+        if (this.metric instanceof CountedMetric)
+        {
+            System.out.println("dataSize = " + dataSize + ", " + "buildTime = " + buildTime + "s, " + "distantCount = " + ((CountedMetric) metric).getCounter());
+        } else
+        {
+            System.out.println("dataSize = " + dataSize + ", " + "buildTime = " + buildTime + "s");
+        }
+    }
+
     public void buildRGHIndex(PivotSelectionMethod psm, PartitionMethod pm, int maxLeafSize,
                            HierarchicalPivotSelectionMode mode)
     {
@@ -549,6 +582,88 @@ public abstract class Table implements Serializable
             System.out.println("dataSize = " + dataSize + ", " + "buildTime = " + buildTime + "s");
         }
 
+    }
+
+    /**
+     * Build a Power-Distance pivot-space index.
+     *
+     * <p>The first version is a binary tree: every internal node uses two pivots
+     * and one linear boundary in power-distance pivot space.</p>
+     */
+    public void buildPowerDistanceIndex(PivotSelectionMethod psm, PartitionMethod pm, int maxLeafSize,
+                                        HierarchicalPivotSelectionMode mode, IndexObject[] specifyPivots)
+    {
+        buildPowerDistanceIndex(psm, pm, 2, maxLeafSize, mode, specifyPivots);
+    }
+
+    public void buildPowerDistanceIndex(PivotSelectionMethod psm, PartitionMethod pm, int numPartitions,
+                                        int maxLeafSize, HierarchicalPivotSelectionMode mode,
+                                        IndexObject[] specifyPivots)
+    {
+        double startTime, endTime, buildTime;
+
+        startTime = System.currentTimeMillis();
+
+        compressData();
+        if (metric instanceof CountedMetric)
+            ((CountedMetric) metric).clear();
+
+        index = new PowerDistanceIndex(indexPrefix, this.data, metric, maxLeafSize,
+                numPartitions,
+                mode, psm, pm, specifyPivots);
+
+        index.buildTree();
+
+        endTime = System.currentTimeMillis();
+        buildTime = (endTime - startTime) / 1000.00;
+
+        this.pivotData = index.getAllPivots();
+
+        if (this.metric instanceof CountedMetric)
+        {
+            System.out.println("dataSize = " + dataSize + ", " + "buildTime = " + buildTime + "s, " + "distantCount = " + ((CountedMetric) metric).getCounter());
+            System.out.println("pivotNum = " + index.getPivotNum());
+        } else
+        {
+            System.out.println("dataSize = " + dataSize + ", " + "buildTime = " + buildTime + "s");
+        }
+    }
+
+    /**
+     * Build a Log-Distance pivot-space index.
+     *
+     * <p>The first version is a binary tree: every internal node uses two pivots
+     * and one linear boundary in log-distance pivot space.</p>
+     */
+    public void buildLogDistanceIndex(PivotSelectionMethod psm, PartitionMethod pm, int maxLeafSize,
+                                      HierarchicalPivotSelectionMode mode, IndexObject[] specifyPivots)
+    {
+        double startTime, endTime, buildTime;
+
+        startTime = System.currentTimeMillis();
+
+        compressData();
+        if (metric instanceof CountedMetric)
+            ((CountedMetric) metric).clear();
+
+        index = new LogDistanceIndex(indexPrefix, this.data, metric, maxLeafSize,
+                mode, psm, pm, specifyPivots);
+
+        index.buildTree();
+
+        endTime = System.currentTimeMillis();
+        buildTime = (endTime - startTime) / 1000.00;
+
+        this.pivotData = index.getAllPivots();
+
+        if (this.metric instanceof CountedMetric)
+        {
+            System.out.println("dataSize = " + dataSize + ", " + "buildTime = " + buildTime + "s, " + "distantCount = " + ((CountedMetric) metric).getCounter());
+            System.out.println("pivotNum = " + index.getPivotNum());
+        } else
+        {
+            System.out.println("dataSize = " + dataSize + ", " + "buildTime = " + buildTime + "s");
+        }
     }
 
     /**

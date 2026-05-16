@@ -46,6 +46,12 @@ public class NormalVector
             return;
         }
 
+        if(dataType.equals("english"))
+        {
+            NormalVector.qr = 2;
+            return;
+        }
+
     }
 
     /**

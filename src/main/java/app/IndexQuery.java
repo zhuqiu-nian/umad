@@ -144,6 +144,9 @@ public class IndexQuery
         } else if (dataTable instanceof ImageTable)
         {
             queriedTable = new ImageTable(queriedDataFileName, "query", queriedDataSetSize);
+        } else if (dataTable instanceof StringTable)
+        {
+            queriedTable = new StringTable(queriedDataFileName, "query", queriedDataSetSize);
         } else
         {
             throw new RuntimeException("不支持的类型！");

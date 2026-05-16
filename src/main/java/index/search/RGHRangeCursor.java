@@ -65,8 +65,11 @@ public class RGHRangeCursor extends RangeCursor
         double[] childDistances = aNode.getChildDistances();
 
         // ===== 尝试剪枝左子树 (若成功则只搜右) =====
-        // 逻辑: (d(Q,Pl)-r)/(d(Q,Pr)+r) >= R
-        if ((d_q_pl - radius) / (d_q_pr + radius) >= splitRatio - EPS)
+        // 逻辑: (d(Q,Pl)-r)/(d(Q,Pr)+r) > R
+        // C++ 使用 >=，但其建树会把 ratio == R 的 E 集合平衡分到左右两侧；
+        // 若查询正落在边界且 r=0，使用 >= 会漏掉被放在左侧的 E 点。
+        // 因此这里在边界上保守搜索两边，只在明确偏右时剪掉左子树。
+        if ((d_q_pl - radius) / (d_q_pr + radius) > splitRatio + EPS)
         {
             //左子树已经剪掉，看搜不搜右子树
             boolean searchRight = false;
@@ -103,21 +106,12 @@ public class RGHRangeCursor extends RangeCursor
                 {
 
                     // ===== 第三层IF: 精确检查 =====
-                    // 计算查询到右子节点pivots的距离
-                    double d_q_right_pl = metric.getDistance(query, rightIntNode.getLeftPivot());
-                    double d_q_right_pr = metric.getDistance(query, rightIntNode.getRightPivot());
-
-                    // 检查是否在radius内，如果是则加入结果
-                    if (d_q_right_pl <= radius) {
-                        currentResult.add(new DoubleIndexObjectPair(d_q_right_pl, rightIntNode.getLeftPivot()));
-                    }
-                    if (d_q_right_pr <= radius) {
-                        currentResult.add(new DoubleIndexObjectPair(d_q_right_pr, rightIntNode.getRightPivot()));
-                    }
-
-                    // 存到memoryHashTable供后续使用
-                    memoryHashTable.put(rightIntNode.getLeftPivot(), d_q_right_pl);
-                    memoryHashTable.put(rightIntNode.getRightPivot(), d_q_right_pr);
+                    // 计算查询到右子节点pivots的距离。这里使用 memoryHashTable：
+                    // 如果父层已经算过，则不重复调用 metric，也不重复添加结果。
+                    double d_q_right_pl = getOrComputePivotDistance(metric, query, radius,
+                            rightIntNode.getLeftPivot(), memoryHashTable, currentResult);
+                    double d_q_right_pr = getOrComputePivotDistance(metric, query, radius,
+                            rightIntNode.getRightPivot(), memoryHashTable, currentResult);
 
                     // 用子节点半径进行精确检查
                     if (d_q_right_pl <= right_child_radius_l + radius + EPS ||
@@ -145,11 +139,16 @@ public class RGHRangeCursor extends RangeCursor
                 nodeSearchActions[1] = NodeSearchAction.RESULTUNKNOWN;
                 return nodeSearchActions;
             }
+
+            nodeSearchActions[0] = NodeSearchAction.RESULTNONE;
+            nodeSearchActions[1] = NodeSearchAction.RESULTNONE;
+            return nodeSearchActions;
         }
 
         // ===== 尝试剪枝右子树 (若成功则只搜左) =====
-        // 逻辑: d(Q,Pr) > r && (d(Q,Pl)+r)/(d(Q,Pr)-r) <= R
-        if (d_q_pr > radius && (d_q_pl + radius) / (d_q_pr - radius) <= splitRatio + EPS)
+        // 逻辑: d(Q,Pr) > r && (d(Q,Pl)+r)/(d(Q,Pr)-r) < R
+        // 与上面的边界处理对称：落在 splitRatio 边界时不能只搜左侧。
+        else if (d_q_pr > radius && (d_q_pl + radius) / (d_q_pr - radius) < splitRatio - EPS)
         {
             boolean searchLeft = false;
 
@@ -184,21 +183,11 @@ public class RGHRangeCursor extends RangeCursor
                 {
 
                     // ===== 第三层IF: 精确检查 =====
-                    // 计算查询到左子节点pivots的距离
-                    double d_q_left_pl = metric.getDistance(query, leftIntNode.getLeftPivot());
-                    double d_q_left_pr = metric.getDistance(query, leftIntNode.getRightPivot());
-
-                    // 检查是否在radius内，如果是则加入结果
-                    if (d_q_left_pl <= radius) {
-                        currentResult.add(new DoubleIndexObjectPair(d_q_left_pl, leftIntNode.getLeftPivot()));
-                    }
-                    if (d_q_left_pr <= radius) {
-                        currentResult.add(new DoubleIndexObjectPair(d_q_left_pr, leftIntNode.getRightPivot()));
-                    }
-
-                    // 存到memoryHashTable供后续使用
-                    memoryHashTable.put(leftIntNode.getLeftPivot(), d_q_left_pl);
-                    memoryHashTable.put(leftIntNode.getRightPivot(), d_q_left_pr);
+                    // 计算查询到左子节点pivots的距离，并缓存，避免递归到子节点后重复计数。
+                    double d_q_left_pl = getOrComputePivotDistance(metric, query, radius,
+                            leftIntNode.getLeftPivot(), memoryHashTable, currentResult);
+                    double d_q_left_pr = getOrComputePivotDistance(metric, query, radius,
+                            leftIntNode.getRightPivot(), memoryHashTable, currentResult);
 
                     // 用子节点半径进行精确检查
                     if (d_q_left_pl <= left_child_radius_l + radius + EPS ||
@@ -226,6 +215,10 @@ public class RGHRangeCursor extends RangeCursor
                 nodeSearchActions[1] = NodeSearchAction.RESULTNONE;
                 return nodeSearchActions;
             }
+
+            nodeSearchActions[0] = NodeSearchAction.RESULTNONE;
+            nodeSearchActions[1] = NodeSearchAction.RESULTNONE;
+            return nodeSearchActions;
         }
 
         // ===== 兜底: 如果都不满足剪枝���件，两边都搜索 =====
@@ -233,5 +226,24 @@ public class RGHRangeCursor extends RangeCursor
         nodeSearchActions[1] = NodeSearchAction.RESULTUNKNOWN;
 
         return nodeSearchActions;
+    }
+
+    private double getOrComputePivotDistance(Metric metric, IndexObject query, double radius,
+                                             IndexObject pivot,
+                                             Hashtable<IndexObject, Double> memoryHashTable,
+                                             LinkedList<DoubleIndexObjectPair> currentResult)
+    {
+        if (memoryHashTable.containsKey(pivot))
+        {
+            return memoryHashTable.get(pivot);
+        }
+
+        double distance = metric.getDistance(query, pivot);
+        memoryHashTable.put(pivot, distance);
+        if (distance <= radius)
+        {
+            currentResult.add(new DoubleIndexObjectPair(distance, pivot));
+        }
+        return distance;
     }
 }

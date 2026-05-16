@@ -604,6 +604,12 @@ public class Application
                                     pivotNum, (VPPartitionMethods)partitionMethod, partitionBlockNum,
                                     maxLeafSize, mode, pivotFileName);
                             break;
+                        case "english":
+                            indexName = IndexBuilder.buildVPIndexOnEnglish(tableManager,dataFileName,
+                                    maxDataSize, pivotSelectionMethod,
+                                    pivotNum, (VPPartitionMethods)partitionMethod, partitionBlockNum,
+                                    maxLeafSize, mode, pivotFileName);
+                            break;
                         default:
                             System.out.println("不支持的数据类型！\n");
                             System.exit(-1);
@@ -698,6 +704,12 @@ public class Application
                             break;
                         case "image":
                             indexName = IndexBuilder.buildGHIndexOnImage(tableManager,dataFileName,
+                                    maxDataSize, pivotSelectionMethod,
+                                    (GHPartitionMethods)partitionMethod,
+                                    maxLeafSize, mode, pivotFileName);
+                            break;
+                        case "english":
+                            indexName = IndexBuilder.buildGHIndexOnEnglish(tableManager,dataFileName,
                                     maxDataSize, pivotSelectionMethod,
                                     (GHPartitionMethods)partitionMethod,
                                     maxLeafSize, mode, pivotFileName);
@@ -835,8 +847,60 @@ public class Application
                                     maxDataSize, pivotSelectionMethod,(ApollonianPartitionMethods) partitionMethod,
                                     maxLeafSize, mode);
                             break;
+                        case "english":
+                            indexName = IndexBuilder.buildApollonianIndexOnEnglish(tableManager,dataFileName,
+                                    maxDataSize, pivotSelectionMethod,(ApollonianPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
                         default:
                             System.out.println(dataType + "不支持的数据类型！\n");
+                            System.exit(-1);
+                    }
+                    break;
+                case "iat":
+                    switch (dataType.toLowerCase()){
+                        case "ms":
+                            indexName = IndexBuilder.buildIATIndexOnMS(tableManager,dataFileName,
+                                    maxDataSize, pivotSelectionMethod,(IATPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "msms":
+                            indexName = IndexBuilder.buildIATIndexOnMsMs(tableManager,dataFileName,
+                                    maxDataSize, pivotSelectionMethod,(IATPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "dna":
+                            indexName = IndexBuilder.buildIATIndexOnDNA(tableManager,dataFileName,
+                                    dim,maxDataSize, pivotSelectionMethod,(IATPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "rna":
+                            indexName = IndexBuilder.buildIATIndexOnRNA(tableManager,dataFileName,
+                                    dim,maxDataSize, pivotSelectionMethod,(IATPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "protein":
+                            indexName = IndexBuilder.buildIATIndexOnProtein(tableManager,dataFileName,
+                                    dim,maxDataSize, pivotSelectionMethod,(IATPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "vector":
+                            indexName = IndexBuilder.buildIATIndexOnVector(tableManager,dataFileName,
+                                    dim,maxDataSize, pivotSelectionMethod,(IATPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "image":
+                            indexName = IndexBuilder.buildIATIndexOnImage(tableManager,dataFileName,
+                                    maxDataSize, pivotSelectionMethod,(IATPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "english":
+                            indexName = IndexBuilder.buildIATIndexOnEnglish(tableManager,dataFileName,
+                                    maxDataSize, pivotSelectionMethod,(IATPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        default:
+                            System.out.println(dataType + "涓嶆敮鎸佺殑鏁版嵁绫诲瀷锛乗n");
                             System.exit(-1);
                     }
                     break;
@@ -845,6 +909,31 @@ public class Application
                         case "vector":
                             indexName = IndexBuilder.buildRGHIndexOnVector(tableManager,dataFileName,
                                     dim,maxDataSize, pivotSelectionMethod,(RGHPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "dna":
+                            indexName = IndexBuilder.buildRGHIndexOnDNA(tableManager,dataFileName,
+                                    dim,maxDataSize, pivotSelectionMethod,(RGHPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "rna":
+                            indexName = IndexBuilder.buildRGHIndexOnRNA(tableManager,dataFileName,
+                                    dim,maxDataSize, pivotSelectionMethod,(RGHPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "protein":
+                            indexName = IndexBuilder.buildRGHIndexOnProtein(tableManager,dataFileName,
+                                    dim,maxDataSize, pivotSelectionMethod,(RGHPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "image":
+                            indexName = IndexBuilder.buildRGHIndexOnImage(tableManager,dataFileName,
+                                    maxDataSize, pivotSelectionMethod,(RGHPartitionMethods) partitionMethod,
+                                    maxLeafSize, mode);
+                            break;
+                        case "english":
+                            indexName = IndexBuilder.buildRGHIndexOnEnglish(tableManager,dataFileName,
+                                    maxDataSize, pivotSelectionMethod,(RGHPartitionMethods) partitionMethod,
                                     maxLeafSize, mode);
                             break;
                         default:
@@ -872,10 +961,10 @@ public class Application
                         "     * -f (file)[数据文件的路径]\n" +
                         "     * -n (numbers)[数据文件中数据的个数]\n" +
                         "     * -d (dim)[数据的维度]\n" +
-                        "     * -i (index)[索引的类型：vp、gh、gnat、pct、cp、at、rgh,默认i=vp]\n" +
+                        "     * -i (index)[索引的类型：vp、gh、gnat、pct、cp、at、iat、rgh,默认i=vp]\n" +
                         "     * -psm (pivot select method)[支撑点选择方法：" + listEnumNames(PivotSelectionMethods.class) + ",默认psm=fft]\n" +
                         "     * -pn (pivot numbers)[支撑点个数，默认pn=3，对于GH树等支撑点个数固定的索引结构，该参数无效，对于AT和RGH索引固定为2]\n" +
-                        "     * -t (type)[数据类型：ms、msms、dna、protein、vector、image，默认t=vector]\n" +
+                        "     * -t (type)[数据类型：ms、msms、dna、protein、vector、image、english，默认t=vector]\n" +
                         "     * -pm (partition method)[划分方法：\n" +
                         "     *                        vp索引树："+ listEnumNames(VPPartitionMethods.class) + "\n" +
                         "     *                        gh索引树："+ listEnumNames(GHPartitionMethods.class) + "\n" +
@@ -883,6 +972,7 @@ public class Application
                         "     *                        pct索引树："+ listEnumNames(PCTPartitionMethods.class) + "\n" +
                         "     *                        cp索引树："+ listEnumNames(CPPartitionMethods.class) + "\n" +
                         "     *                        at索引树："+ listEnumNames(ApollonianPartitionMethods.class) + "\n" +
+                        "     *                        iat索引树："+ listEnumNames(IATPartitionMethods.class) + "\n" +
                         "     *                        rgh索引树："+ listEnumNames(RGHPartitionMethods.class) + "]\n" +
                         "     * -pbn (partition block number)[划分的块数，默认为3,对于GH树等划分块数固定的索引结构，该参数无效，对于AT索引固定为3，RGH索引固定为2]\n" +
                         "     * -maxLeaf [最大叶子大小，默认maxLeaf=10]\n" +
@@ -939,6 +1029,8 @@ public class Application
                         partitionMethod = GNATPartitionMethods.valueOf(args[++i].toUpperCase());
                     if (indexType.equalsIgnoreCase("at"))
                         partitionMethod = ApollonianPartitionMethods.valueOf(args[++i].toUpperCase());
+                    if (indexType.equalsIgnoreCase("iat"))
+                        partitionMethod = IATPartitionMethods.valueOf(args[++i].toUpperCase());
                     if (indexType.equalsIgnoreCase("rgh"))
                         partitionMethod = RGHPartitionMethods.valueOf(args[++i].toUpperCase());
                     break;
@@ -985,6 +1077,8 @@ public class Application
                 partitionMethod = GNATPartitionMethods.gnat;
             if (indexType.equalsIgnoreCase("at"))
                 partitionMethod = ApollonianPartitionMethods.APOLLONIAN;
+            if (indexType.equalsIgnoreCase("iat"))
+                partitionMethod = IATPartitionMethods.SPATIAL_BALANCED;
             if (indexType.equalsIgnoreCase("rgh"))
                 partitionMethod = RGHPartitionMethods.RGH;
         }

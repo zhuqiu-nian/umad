@@ -108,10 +108,8 @@ public class RGHIndex extends AbstractIndex
     @Override
     protected long localBulkLoad(PartitionResults partition, IndexObject[] pivots, int numPartitions) throws IOException
     {
-        // 如果数据量小于等于叶子容量，创建叶子节点
         if (partition.getDataSize() <= this.maxLeafSize)
         {
-            // 获取所有分区的数据来创建叶子节点
             List<IndexObject> allData = new java.util.ArrayList<>();
             for (int i = 0; i < partition.getNumPartition(); i++)
             {
@@ -120,58 +118,27 @@ public class RGHIndex extends AbstractIndex
             return createAndWriteLeafNode(pivots, allData);
         }
 
-        // 获取划分后的数据（left和right）
-        List<? extends IndexObject> leftData = partition.getPartitionOf(0);
-        List<? extends IndexObject> rightData = partition.getPartitionOf(1);
+        // C++ bulkLoad 会先保留完整 leftData/rightData 用于当前节点元数据，
+        // 递归构建子树时才在子调用中选择并移除子 pivot。Java 的接口要求
+        // 显式传入子 pivot，因此这里用两份副本：完整副本算半径，构建副本删 pivot。
+        List<IndexObject> leftAllData = copyPartition(partition, 0);
+        List<IndexObject> rightAllData = copyPartition(partition, 1);
 
-        // ===== 步骤1：先递归构建左右子树 =====
-        // 为左子树选择pivots并递归构建
-        int[] leftPivotsIdx = pivotSelection(metric, leftData, leftData, this.numPivot);
-        IndexObject[] leftPivots = new IndexObject[leftPivotsIdx.length];
-        for (int i = 0; i < leftPivots.length; i++)
-        {
-            leftPivots[i] = leftData.get(leftPivotsIdx[i]);
-        }
-        // 从数据集中删除被选择的pivots
-        leftData.removeAll(Arrays.asList(leftPivots));
+        IndexObject[] leftPivots = selectPivotSet(leftAllData);
+        IndexObject[] rightPivots = selectPivotSet(rightAllData);
+        this.allPivotSet.addAll(Arrays.asList(leftPivots));
+        this.allPivotSet.addAll(Arrays.asList(rightPivots));
 
-        // 为右子树选择pivots并递归构建
-        int[] rightPivotsIdx = pivotSelection(metric, rightData, rightData, this.numPivot);
-        IndexObject[] rightPivots = new IndexObject[rightPivotsIdx.length];
-        for (int i = 0; i < rightPivots.length; i++)
-        {
-            rightPivots[i] = rightData.get(rightPivotsIdx[i]);
-        }
-        rightData.removeAll(Arrays.asList(rightPivots));
+        List<IndexObject> leftBuildData = new java.util.ArrayList<>(leftAllData);
+        List<IndexObject> rightBuildData = new java.util.ArrayList<>(rightAllData);
+        leftBuildData.removeAll(Arrays.asList(leftPivots));
+        rightBuildData.removeAll(Arrays.asList(rightPivots));
 
-        // 递归构建左子树（如果数据量大）
-        long leftChildAddress;
-        if (leftData.size() > this.maxLeafSize)
-        {
-            PartitionResults leftPartition = partition(metric, leftPivots, leftData, numPartitions);
-            leftChildAddress = localBulkLoad(leftPartition, leftPivots, numPartitions);
-        }
-        else
-        {
-            leftChildAddress = createAndWriteLeafNode(leftPivots, leftData);
-        }
+        long leftChildAddress = buildChildSubtree(leftPivots, leftBuildData, numPartitions);
+        long rightChildAddress = buildChildSubtree(rightPivots, rightBuildData, numPartitions);
 
-        // 递归构建右子树（如果数据量大）
-        long rightChildAddress;
-        if (rightData.size() > this.maxLeafSize)
-        {
-            PartitionResults rightPartition = partition(metric, rightPivots, rightData, numPartitions);
-            rightChildAddress = localBulkLoad(rightPartition, rightPivots, numPartitions);
-        }
-        else
-        {
-            rightChildAddress = createAndWriteLeafNode(rightPivots, rightData);
-        }
-
-        // ===== 步骤2：读取子节点对象，获取子节点的pivots =====
-        // 需要读取已写入的子节点来获取其pivots，以便计算childDistances
-        Node leftChildNode = null;
-        Node rightChildNode = null;
+        Node leftChildNode;
+        Node rightChildNode;
         try {
             leftChildNode = (Node) oiom.readObject(leftChildAddress);
             rightChildNode = (Node) oiom.readObject(rightChildAddress);
@@ -179,97 +146,72 @@ public class RGHIndex extends AbstractIndex
             throw new IOException("Failed to read child nodes: " + e.getMessage(), e);
         }
 
-        IndexObject leftChildLeftPivot = null;
-        IndexObject leftChildRightPivot = null;
-        IndexObject rightChildLeftPivot = null;
-        IndexObject rightChildRightPivot = null;
-
-        if (leftChildNode instanceof RGHInternalNode)
-        {
-            RGHInternalNode leftInt = (RGHInternalNode) leftChildNode;
-            leftChildLeftPivot = leftInt.getLeftPivot();
-            leftChildRightPivot = leftInt.getRightPivot();
-        }
-        else if (leftChildNode instanceof LeafNode)
-        {
-            LeafNode leftLeaf = (LeafNode) leftChildNode;
-            // 叶子节点的pivots
-            leftChildLeftPivot = leftLeaf.getPivotOf(0);
-            leftChildRightPivot = leftLeaf.getPivotOf(1);
-        }
-
-        if (rightChildNode instanceof RGHInternalNode)
-        {
-            RGHInternalNode rightInt = (RGHInternalNode) rightChildNode;
-            rightChildLeftPivot = rightInt.getLeftPivot();
-            rightChildRightPivot = rightInt.getRightPivot();
-        }
-        else if (rightChildNode instanceof LeafNode)
-        {
-            LeafNode rightLeaf = (LeafNode) rightChildNode;
-            rightChildLeftPivot = rightLeaf.getPivotOf(0);
-            rightChildRightPivot = rightLeaf.getPivotOf(1);
-        }
-
-        // ===== 步骤3：计算覆盖半径 dl 和 dr =====
-        // dl: 当前pivot(Pl)到左子集中所有数据点的最大距离
-        // dr: 当前pivot(Pr)到右子集中所有数据点的最大距离
         double dl = 0.0;
-        for (IndexObject obj : leftData)
+        for (IndexObject obj : leftAllData)
         {
             double d = metric.getDistance(pivots[0], obj);
             if (d > dl) dl = d;
         }
+
         double dr = 0.0;
-        for (IndexObject obj : rightData)
+        for (IndexObject obj : rightAllData)
         {
             double d = metric.getDistance(pivots[1], obj);
             if (d > dr) dr = d;
         }
 
-        // ===== 步骤4：计算childDistances[4] =====
-        // childDistances[0] = d(Pl, V.left.Pl) - 当前左Pivot到左子节点的左Pivot
-        // childDistances[1] = d(Pl, V.left.Pr) - 当前左Pivot到左子节点的右Pivot
-        // childDistances[2] = d(Pr, V.right.Pl) - 当前右Pivot到右子节点的左Pivot
-        // childDistances[3] = d(Pr, V.right.Pr) - 当前右Pivot到右子节点的右Pivot
-        double[] childDistances = new double[4];
-
-        // 如果子节点是内部节点或有有效的pivots，则计算距离
-        if (leftChildLeftPivot != null && leftChildRightPivot != null)
+        // 对齐 C++：childDistances 只在子节点是 RGHInternalNode 时有效；
+        // 如果子节点是叶子，搜索阶段会保守直接搜索该叶子。
+        double[] childDistances = new double[]{-1.0, -1.0, -1.0, -1.0};
+        if (leftChildNode instanceof RGHInternalNode)
         {
-            childDistances[0] = metric.getDistance(pivots[0], leftChildLeftPivot);
-            childDistances[1] = metric.getDistance(pivots[0], leftChildRightPivot);
-        }
-        else
-        {
-            childDistances[0] = -1.0;
-            childDistances[1] = -1.0;
+            RGHInternalNode leftInt = (RGHInternalNode) leftChildNode;
+            childDistances[0] = metric.getDistance(pivots[0], leftInt.getLeftPivot());
+            childDistances[1] = metric.getDistance(pivots[0], leftInt.getRightPivot());
         }
 
-        if (rightChildLeftPivot != null && rightChildRightPivot != null)
+        if (rightChildNode instanceof RGHInternalNode)
         {
-            childDistances[2] = metric.getDistance(pivots[1], rightChildLeftPivot);
-            childDistances[3] = metric.getDistance(pivots[1], rightChildRightPivot);
+            RGHInternalNode rightInt = (RGHInternalNode) rightChildNode;
+            childDistances[2] = metric.getDistance(pivots[1], rightInt.getLeftPivot());
+            childDistances[3] = metric.getDistance(pivots[1], rightInt.getRightPivot());
         }
-        else
-        {
-            childDistances[2] = -1.0;
-            childDistances[3] = -1.0;
-        }
-
-        // ===== 步骤5：创建当前内部节点 =====
-        // 直接使用简化构造函数
-        // dl = 左子集到当前Pl的最大距离
-        // dr = 右子集到当前Pr的最大距离
 
         double splitRatio = ((RGHPartitionResults) partition).getSplitRatio();
-
         long[] childAddresses = new long[]{leftChildAddress, rightChildAddress};
 
         RGHInternalNode node = new RGHInternalNode(pivots, partition.getDataSize(), childAddresses,
                 splitRatio, dl, dr, childDistances);
 
         return writeInternalNode(node);
+    }
+
+    private List<IndexObject> copyPartition(PartitionResults partition, int partitionIndex)
+    {
+        List<IndexObject> copy = new java.util.ArrayList<>();
+        copy.addAll(partition.getPartitionOf(partitionIndex));
+        return copy;
+    }
+
+    private IndexObject[] selectPivotSet(List<? extends IndexObject> data)
+    {
+        int[] pivotIndexes = pivotSelection(metric, data, data, this.numPivot);
+        IndexObject[] pivotSet = new IndexObject[pivotIndexes.length];
+        for (int i = 0; i < pivotSet.length; i++)
+        {
+            pivotSet[i] = data.get(pivotIndexes[i]);
+        }
+        return pivotSet;
+    }
+
+    private long buildChildSubtree(IndexObject[] childPivots, List<IndexObject> childData, int numPartitions) throws IOException
+    {
+        if (childData.size() > this.maxLeafSize)
+        {
+            PartitionResults childPartition = partition(metric, childPivots, childData, numPartitions);
+            return localBulkLoad(childPartition, childPivots, numPartitions);
+        }
+        return createAndWriteLeafNode(childPivots, childData);
     }
 
     /**
