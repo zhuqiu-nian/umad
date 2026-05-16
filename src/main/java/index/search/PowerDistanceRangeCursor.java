@@ -64,6 +64,11 @@ public class PowerDistanceRangeCursor extends RangeCursor
                 for (int pivot = 0; pivot < 2; pivot++)
                 {
                     double[] childRange = pdNode.getChildPivotDistanceRange(child, pivot);
+                    if (queryToPivotDistance[pivot] + childRange[1] <= radius + eps)
+                    {
+                        actions[child] = NodeSearchAction.RESULTALL;
+                        break;
+                    }
                     boolean disjoint = rawIntervals[pivot].getHigh() < childRange[0] - eps
                             || rawIntervals[pivot].getLow() > childRange[1] + eps;
                     if (disjoint)
@@ -80,7 +85,8 @@ public class PowerDistanceRangeCursor extends RangeCursor
 
         for (int i = 0; i < actions.length; i++)
         {
-            if (actions[i] == NodeSearchAction.RESULTNONE)
+            if (actions[i] == NodeSearchAction.RESULTNONE
+                    || actions[i] == NodeSearchAction.RESULTALL)
             {
                 continue;
             }
