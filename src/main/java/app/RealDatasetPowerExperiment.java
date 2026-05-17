@@ -9,6 +9,8 @@ import algorithms.pivotselection.PivotSelectionMethod;
 import algorithms.pivotselection.PivotSelectionMethods;
 import algorithms.pivotselection.PowerDistanceMedoidPairPivotSelectionMethod;
 import db.TableManager;
+import db.table.DNATable;
+import db.table.DimacsVectorTable;
 import db.table.DoubleVectorTable;
 import db.table.ImageTable;
 import db.table.PeptideTable;
@@ -254,11 +256,15 @@ public class RealDatasetPowerExperiment
                 "data/vector/Uniform-5-d-vector.txt", 5, 0.50), radiusOverrides));
         addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.vector("uniform20",
                 "data/vector/Uniform-20-d-vector.txt", 20, 1.20), radiusOverrides));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.dimacsVector("nasa",
+                "data/vectors-20.dat", 20, 0.20, 37000), radiusOverrides));
         addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.image("image", "data", 0.05), radiusOverrides));
         addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.english("english",
                 "data/English.dic", 2.0), radiusOverrides));
         addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.protein("protein",
                 "data/yeast.aa", 5, 2.0), radiusOverrides));
+        addIfSelected(datasets, only, withRadiusOverride(DatasetSpec.dna("arab_dna",
+                "data/arab/arab1.con", "data/arab/arab2.con", 18, 3.0), radiusOverrides));
 
         for (DatasetSpec dataset : datasets)
         {
@@ -509,24 +515,49 @@ public class RealDatasetPowerExperiment
         private final String name;
         private final String type;
         private final String path;
+        private final String queryPath;
         private final int dimOrFragmentLength;
         private final double radius;
+        private final int queryOffset;
         private int dataSizeHint;
         private int querySizeHint;
 
         private DatasetSpec(String name, String type, String path,
                             int dimOrFragmentLength, double radius)
         {
+            this(name, type, path, null, dimOrFragmentLength, radius, 0);
+        }
+
+        private DatasetSpec(String name, String type, String path,
+                            int dimOrFragmentLength, double radius,
+                            int queryOffset)
+        {
+            this(name, type, path, null, dimOrFragmentLength, radius, queryOffset);
+        }
+
+        private DatasetSpec(String name, String type, String path,
+                            String queryPath, int dimOrFragmentLength,
+                            double radius, int queryOffset)
+        {
             this.name = name;
             this.type = type;
             this.path = path;
+            this.queryPath = queryPath;
             this.dimOrFragmentLength = dimOrFragmentLength;
             this.radius = radius;
+            this.queryOffset = queryOffset;
         }
 
         static DatasetSpec vector(String name, String path, int dim, double radius)
         {
             return new DatasetSpec(name, "vector", path, dim, radius);
+        }
+
+        static DatasetSpec dimacsVector(String name, String path, int dim,
+                                        double radius, int queryOffset)
+        {
+            return new DatasetSpec(name, "dimacs-vector", path, dim, radius,
+                    queryOffset);
         }
 
         static DatasetSpec image(String name, String path, double radius)
@@ -545,36 +576,69 @@ public class RealDatasetPowerExperiment
             return new DatasetSpec(name, "protein", path, fragmentLength, radius);
         }
 
+        static DatasetSpec dna(String name, String path, int fragmentLength,
+                               double radius)
+        {
+            return new DatasetSpec(name, "dna", path, fragmentLength, radius);
+        }
+
+        static DatasetSpec dna(String name, String path, String queryPath,
+                               int fragmentLength, double radius)
+        {
+            return new DatasetSpec(name, "dna", path, queryPath, fragmentLength,
+                    radius, 0);
+        }
+
         DatasetSpec withRadius(double newRadius)
         {
-            return new DatasetSpec(name, type, path, dimOrFragmentLength, newRadius);
+            return new DatasetSpec(name, type, path, queryPath, dimOrFragmentLength,
+                    newRadius, queryOffset);
         }
 
         Table loadTable(String indexPrefix, int size) throws Exception
         {
+            return loadTable(indexPrefix, size, false);
+        }
+
+        Table loadTable(String indexPrefix, int size, boolean query) throws Exception
+        {
             if ("vector".equals(type))
             {
-                return new DoubleVectorTable(path, indexPrefix, size, dimOrFragmentLength);
+                return new DoubleVectorTable(sourcePath(query), indexPrefix, size, dimOrFragmentLength);
+            }
+            if ("dimacs-vector".equals(type))
+            {
+                int skip = query ? queryOffset : 0;
+                return new DimacsVectorTable(sourcePath(query), indexPrefix, size, skip);
             }
             if ("image".equals(type))
             {
-                return new ImageTable(path, indexPrefix, size);
+                return new ImageTable(sourcePath(query), indexPrefix, size);
             }
             if ("english".equals(type))
             {
-                return new StringTable(path, indexPrefix, size);
+                return new StringTable(sourcePath(query), indexPrefix, size);
             }
             if ("protein".equals(type))
             {
-                return new PeptideTable(path, indexPrefix, size, dimOrFragmentLength);
+                return new PeptideTable(sourcePath(query), indexPrefix, size, dimOrFragmentLength);
+            }
+            if ("dna".equals(type))
+            {
+                return new DNATable(sourcePath(query), indexPrefix, size, dimOrFragmentLength);
             }
             throw new IllegalStateException("unknown dataset type: " + type);
+        }
+
+        private String sourcePath(boolean query)
+        {
+            return query && queryPath != null ? queryPath : path;
         }
 
         List<? extends IndexObject> loadQueries(int requestedSize) throws Exception
         {
             Table table = loadTable("query_" + name + "_" + System.nanoTime(),
-                    requestedSize);
+                    requestedSize, true);
             return table.getData();
         }
     }
