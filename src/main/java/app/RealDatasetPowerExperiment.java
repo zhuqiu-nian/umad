@@ -458,7 +458,11 @@ public class RealDatasetPowerExperiment
         String defaultTrainingQuerySampleSize = "128";
         String defaultMedoidCandidateCount = "6";
         String defaultMedoidIterations = "1";
-        if ("strong".equals(preset))
+        String defaultValidationFraction = "0.0";
+        String defaultTopCandidates = "16";
+        String defaultBoxPenaltyWeight = "0.0001";
+        String defaultChildHitPenaltyWeight = "0.0001";
+        if ("strong".equals(preset) || "costaware".equals(preset))
         {
             defaultRhoGrid = "-4,-2,-1,-0.5,0.5,1,2,4";
             defaultAngleCount = "16";
@@ -466,9 +470,15 @@ public class RealDatasetPowerExperiment
             defaultMedoidCandidateCount = "8";
             defaultMedoidIterations = "2";
         }
-        else if (!"medium".equals(preset) && !"fast".equals(preset))
+        if ("costaware".equals(preset))
         {
-            throw new IllegalArgumentException("learningPreset must be fast, medium, or strong");
+            defaultValidationFraction = "0.30";
+            defaultTopCandidates = "16";
+        }
+        else if (!"medium".equals(preset) && !"fast".equals(preset)
+                && !"strong".equals(preset))
+        {
+            throw new IllegalArgumentException("learningPreset must be fast, medium, strong, or costAware");
         }
         if ("fast".equals(preset))
         {
@@ -487,7 +497,11 @@ public class RealDatasetPowerExperiment
                 Integer.parseInt(options.getOrDefault("medoidCandidateCount", defaultMedoidCandidateCount)),
                 Integer.parseInt(options.getOrDefault("medoidIterations", defaultMedoidIterations)),
                 PowerDistanceTransform.DEFAULT_EPSILON_DISTANCE,
-                PowerDistanceTransform.DEFAULT_COMPARISON_EPSILON);
+                PowerDistanceTransform.DEFAULT_COMPARISON_EPSILON,
+                Double.parseDouble(options.getOrDefault("validationFraction", defaultValidationFraction)),
+                Integer.parseInt(options.getOrDefault("topCandidates", defaultTopCandidates)),
+                Double.parseDouble(options.getOrDefault("boxPenaltyWeight", defaultBoxPenaltyWeight)),
+                Double.parseDouble(options.getOrDefault("childHitPenaltyWeight", defaultChildHitPenaltyWeight)));
     }
 
     private static class DatasetSpec

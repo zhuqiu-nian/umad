@@ -47,8 +47,34 @@ public class PowerDistanceLearningTest
         assertTrue(result.isQueryAware());
         assertFalse(result.isFallback());
         assertTrue(result.getScore() > 0.0);
+        assertTrue(Double.isFinite(result.getEstimatedDistanceCost()));
+        assertTrue(result.getEstimatedDistanceCost() < data.size());
         assertTrue(Math.min(result.getLeftSize(), result.getRightSize())
                 >= data.size() * config.getMinBalance());
+    }
+
+    @Test
+    public void costAwareConfigKeepsValidationAndTopCandidateSettings()
+    {
+        PowerDistanceLearningConfig config = new PowerDistanceLearningConfig(
+                new double[]{-2.0, 2.0},
+                4,
+                new double[]{0.4, 0.6},
+                0.2,
+                20,
+                4,
+                1,
+                PowerDistanceTransform.DEFAULT_EPSILON_DISTANCE,
+                PowerDistanceTransform.DEFAULT_COMPARISON_EPSILON,
+                0.30,
+                7,
+                0.001,
+                0.002);
+
+        assertEquals(0.30, config.getValidationFraction(), 0.0);
+        assertEquals(7, config.getTopCandidates());
+        assertEquals(0.001, config.getBoxPenaltyWeight(), 0.0);
+        assertEquals(0.002, config.getChildHitPenaltyWeight(), 0.0);
     }
 
     @Test

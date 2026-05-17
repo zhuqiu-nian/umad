@@ -93,10 +93,18 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
         }
 
         PowerDistanceBoundaryOptimizer optimizer = new PowerDistanceBoundaryOptimizer();
-        PowerDistanceBoundaryOptimizer.Result bestResult = null;
-        int bestI = candidates[0];
-        int bestJ = candidates[1];
-        double bestPairDistance = 0.0;
+        PowerDistanceLearningConfig pairScoringConfig = pairScoringConfig();
+        int[] fftPair = PivotSelectionMethods.FFT.selectPivots(metric, subset, 2);
+        int bestI = fftPair.length > 0 ? fftPair[0] : candidates[0];
+        int bestJ = fftPair.length > 1 ? fftPair[1] : candidates[1];
+        IndexObject[] baselinePivots = new IndexObject[]{
+                subset.get(bestI), subset.get(bestJ)
+        };
+        PowerDistanceBoundaryOptimizer.Result bestResult = optimizer.optimize(
+                metric, baselinePivots, subset, 0, subset.size(),
+                trainingQueries, queryRadius, pairScoringConfig, numPartitions);
+        double bestPairDistance = metric.getDistance(subset.get(bestI),
+                subset.get(bestJ));
         double maxPairDistance = maxPairDistance(metric, subset, candidates);
         double minPairDistance = maxPairDistance * 0.25;
         for (int a = 0; a < candidates.length; a++)
@@ -115,7 +123,7 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
                 };
                 PowerDistanceBoundaryOptimizer.Result result = optimizer.optimize(
                         metric, pivots, subset, 0, subset.size(),
-                        trainingQueries, queryRadius, config, numPartitions);
+                        trainingQueries, queryRadius, pairScoringConfig, numPartitions);
                 if (better(result, bestResult)
                         || (equivalent(result, bestResult) && pairDistance > bestPairDistance))
                 {
@@ -178,15 +186,23 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
         }
 
         Set<Integer> unique = new LinkedHashSet<>();
-        for (int center : fftCenters)
-        {
-            unique.add(center);
-        }
         for (int center : centers)
         {
             unique.add(center);
+            if (unique.size() >= candidateCount)
+            {
+                break;
+            }
         }
-        for (int i = 0; i < data.size() && unique.size() < candidateLimit; i++)
+        for (int center : fftCenters)
+        {
+            unique.add(center);
+            if (unique.size() >= candidateCount)
+            {
+                break;
+            }
+        }
+        for (int i = 0; i < data.size() && unique.size() < candidateCount; i++)
         {
             unique.add(i);
         }
@@ -198,6 +214,33 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
             result[index++] = value;
         }
         return result;
+    }
+
+    private PowerDistanceLearningConfig pairScoringConfig()
+    {
+        return new PowerDistanceLearningConfig(
+                config.getRhoGrid(),
+                Math.min(config.getAngleCount(), 8),
+                compactQuantiles(config.getTauQuantiles()),
+                config.getMinBalance(),
+                Math.min(config.getTrainingQuerySampleSize(), 64),
+                config.getMedoidCandidateCount(),
+                config.getMedoidIterations(),
+                config.getEpsilonDistance(),
+                config.getComparisonEpsilon(),
+                config.getValidationFraction(),
+                Math.min(config.getTopCandidates(), 8),
+                config.getBoxPenaltyWeight(),
+                config.getChildHitPenaltyWeight());
+    }
+
+    private double[] compactQuantiles(double[] configured)
+    {
+        if (configured.length <= 3)
+        {
+            return configured;
+        }
+        return new double[]{0.4, 0.5, 0.6};
     }
 
     private void assign(Metric metric, List<? extends IndexObject> data,
@@ -272,6 +315,14 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
         {
             return true;
         }
+        if (candidate.getEstimatedDistanceCost() < best.getEstimatedDistanceCost() - 1e-12)
+        {
+            return true;
+        }
+        if (candidate.getEstimatedDistanceCost() > best.getEstimatedDistanceCost() + 1e-12)
+        {
+            return false;
+        }
         if (candidate.getScore() > best.getScore() + 1e-12)
         {
             return true;
@@ -298,7 +349,9 @@ public class PowerDistanceMedoidPairPivotSelectionMethod
         {
             return false;
         }
-        return Math.abs(candidate.getScore() - best.getScore()) <= 1e-12
+        return Math.abs(candidate.getEstimatedDistanceCost()
+                - best.getEstimatedDistanceCost()) <= 1e-12
+                && Math.abs(candidate.getScore() - best.getScore()) <= 1e-12
                 && Math.abs(candidate.getBalanceScore() - best.getBalanceScore()) <= 1e-12
                 && Math.abs(candidate.getMarginScore() - best.getMarginScore()) <= 1e-12;
     }

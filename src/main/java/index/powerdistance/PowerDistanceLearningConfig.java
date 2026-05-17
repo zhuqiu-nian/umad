@@ -16,6 +16,10 @@ public class PowerDistanceLearningConfig implements Serializable
     private final int medoidIterations;
     private final double epsilonDistance;
     private final double comparisonEpsilon;
+    private final double validationFraction;
+    private final int topCandidates;
+    private final double boxPenaltyWeight;
+    private final double childHitPenaltyWeight;
 
     public PowerDistanceLearningConfig()
     {
@@ -27,7 +31,11 @@ public class PowerDistanceLearningConfig implements Serializable
                 8,
                 2,
                 PowerDistanceTransform.DEFAULT_EPSILON_DISTANCE,
-                PowerDistanceTransform.DEFAULT_COMPARISON_EPSILON);
+                PowerDistanceTransform.DEFAULT_COMPARISON_EPSILON,
+                0.30,
+                16,
+                1.0e-4,
+                1.0e-4);
     }
 
     public PowerDistanceLearningConfig(double[] rhoGrid, int angleCount,
@@ -37,6 +45,23 @@ public class PowerDistanceLearningConfig implements Serializable
                                        int medoidIterations,
                                        double epsilonDistance,
                                        double comparisonEpsilon)
+    {
+        this(rhoGrid, angleCount, tauQuantiles, minBalance,
+                trainingQuerySampleSize, medoidCandidateCount, medoidIterations,
+                epsilonDistance, comparisonEpsilon, 0.0, 16, 1.0e-4, 1.0e-4);
+    }
+
+    public PowerDistanceLearningConfig(double[] rhoGrid, int angleCount,
+                                       double[] tauQuantiles, double minBalance,
+                                       int trainingQuerySampleSize,
+                                       int medoidCandidateCount,
+                                       int medoidIterations,
+                                       double epsilonDistance,
+                                       double comparisonEpsilon,
+                                       double validationFraction,
+                                       int topCandidates,
+                                       double boxPenaltyWeight,
+                                       double childHitPenaltyWeight)
     {
         if (rhoGrid == null || rhoGrid.length == 0)
         {
@@ -84,6 +109,22 @@ public class PowerDistanceLearningConfig implements Serializable
         {
             throw new IllegalArgumentException("epsilonDistance must be positive");
         }
+        if (validationFraction < 0.0 || validationFraction >= 1.0)
+        {
+            throw new IllegalArgumentException("validationFraction must be in [0,1)");
+        }
+        if (topCandidates <= 0)
+        {
+            throw new IllegalArgumentException("topCandidates must be positive");
+        }
+        if (boxPenaltyWeight < 0.0)
+        {
+            throw new IllegalArgumentException("boxPenaltyWeight must be non-negative");
+        }
+        if (childHitPenaltyWeight < 0.0)
+        {
+            throw new IllegalArgumentException("childHitPenaltyWeight must be non-negative");
+        }
         this.rhoGrid = rhoGrid.clone();
         this.angleCount = angleCount;
         this.tauQuantiles = tauQuantiles.clone();
@@ -93,6 +134,10 @@ public class PowerDistanceLearningConfig implements Serializable
         this.medoidIterations = medoidIterations;
         this.epsilonDistance = epsilonDistance;
         this.comparisonEpsilon = comparisonEpsilon;
+        this.validationFraction = validationFraction;
+        this.topCandidates = topCandidates;
+        this.boxPenaltyWeight = boxPenaltyWeight;
+        this.childHitPenaltyWeight = childHitPenaltyWeight;
     }
 
     public double[] getRhoGrid()
@@ -140,6 +185,26 @@ public class PowerDistanceLearningConfig implements Serializable
         return comparisonEpsilon;
     }
 
+    public double getValidationFraction()
+    {
+        return validationFraction;
+    }
+
+    public int getTopCandidates()
+    {
+        return topCandidates;
+    }
+
+    public double getBoxPenaltyWeight()
+    {
+        return boxPenaltyWeight;
+    }
+
+    public double getChildHitPenaltyWeight()
+    {
+        return childHitPenaltyWeight;
+    }
+
     @Override
     public String toString()
     {
@@ -153,6 +218,10 @@ public class PowerDistanceLearningConfig implements Serializable
                 ", medoidIterations=" + medoidIterations +
                 ", epsilonDistance=" + epsilonDistance +
                 ", comparisonEpsilon=" + comparisonEpsilon +
+                ", validationFraction=" + validationFraction +
+                ", topCandidates=" + topCandidates +
+                ", boxPenaltyWeight=" + boxPenaltyWeight +
+                ", childHitPenaltyWeight=" + childHitPenaltyWeight +
                 '}';
     }
 }

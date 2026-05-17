@@ -50,7 +50,16 @@ public class PowerDistanceBoundaryOptimizer
         DistanceCache cache = new DistanceCache(metric, pivots, data, first, size,
                 trainingQueries, queryRadius, config.getTrainingQuerySampleSize());
         List<double[]> directions = directions(config.getAngleCount());
-        Result best = null;
+        List<Candidate> topCandidates = new ArrayList<>();
+        Candidate bestDataCandidate = null;
+        int trainEnd = trainingEnd(cache, config);
+        int validationStart = trainEnd;
+        int validationEnd = cache.queryCount;
+        if (validationStart >= validationEnd)
+        {
+            validationStart = 0;
+            validationEnd = cache.queryCount;
+        }
 
         for (double rho : config.getRhoGrid())
         {
@@ -77,22 +86,52 @@ public class PowerDistanceBoundaryOptimizer
                         continue;
                     }
 
-                    Result candidate = evaluateCandidate(metric, pivots, cache,
+                    Candidate candidate = evaluateCandidate(cache,
                             transform, rho, w1, w2, thresholds, counts, scores,
-                            config.getComparisonEpsilon());
-                    if (isBetter(candidate, best))
+                            0, trainEnd, config);
+                    if (cache.hasQueries())
                     {
-                        best = candidate;
+                        offerTopCandidate(topCandidates, candidate,
+                                config.getTopCandidates());
+                    }
+                    else if (isBetter(candidate, bestDataCandidate))
+                    {
+                        bestDataCandidate = candidate;
                     }
                 }
             }
         }
 
-        if (best == null)
+        if (cache.hasQueries() && !topCandidates.isEmpty())
+        {
+            Candidate best = null;
+            for (Candidate candidate : topCandidates)
+            {
+                Candidate validationCandidate = evaluateCandidate(cache,
+                        candidate.transform, candidate.rho, candidate.w1,
+                        candidate.w2, candidate.thresholds, candidate.counts,
+                        candidate.scores, validationStart, validationEnd, config);
+                if (isBetter(validationCandidate, best))
+                {
+                    best = validationCandidate;
+                }
+            }
+            if (best != null)
+            {
+                return best.toResult();
+            }
+        }
+
+        if (bestDataCandidate != null)
+        {
+            return bestDataCandidate.toResult();
+        }
+
+        if (topCandidates.isEmpty())
         {
             return fallback(metric, pivots, data, first, size, config);
         }
-        return best;
+        return topCandidates.get(0).toResult();
     }
 
     public Result fallback(Metric metric,
@@ -121,7 +160,7 @@ public class PowerDistanceBoundaryOptimizer
         Counts counts = partitionCounts(scores, new double[]{tau});
         return new Result(rho, w1, w2, new double[]{tau}, counts.partitionSizes,
                 false, 0.0, balanceScore(counts.left, counts.right),
-                0.0, true, true);
+                0.0, Double.POSITIVE_INFINITY, 0.0, 0.0, true, true);
     }
 
     public static double score(IndexObject x, Metric metric, IndexObject[] pivots,
@@ -168,9 +207,7 @@ public class PowerDistanceBoundaryOptimizer
         return new Counts(left, right, equal, partitionSizes);
     }
 
-    private Result evaluateCandidate(Metric metric,
-                                     IndexObject[] pivots,
-                                     DistanceCache cache,
+    private Candidate evaluateCandidate(DistanceCache cache,
                                      PowerDistanceTransform transform,
                                      double rho,
                                      double w1,
@@ -178,17 +215,35 @@ public class PowerDistanceBoundaryOptimizer
                                      double[] thresholds,
                                      Counts counts,
                                      double[] scores,
-                                     double comparisonEpsilon)
+                                     int queryStart,
+                                     int queryEnd,
+                                     PowerDistanceLearningConfig config)
     {
         boolean queryAware = cache.hasQueries();
         double score = 0.0;
         double margin = 0.0;
+        double estimatedDistanceCost = Double.POSITIVE_INFINITY;
+        double boxPenalty = 0.0;
+        double childHitPenalty = 0.0;
         if (queryAware)
         {
             double[] weights = new double[]{w1, w2};
             double[][][] childRanges = childPivotDistanceRanges(cache.dataDistances1,
                     cache.dataDistances2, scores, thresholds, counts.partitionSizes.length);
-            for (int i = 0; i < cache.queryCount; i++)
+            int[] partitions = partitionIndexes(scores, thresholds);
+            int effectiveQueryStart = Math.max(0, Math.min(queryStart, cache.queryCount));
+            int effectiveQueryEnd = Math.max(effectiveQueryStart,
+                    Math.min(queryEnd, cache.queryCount));
+            int evaluatedQueries = effectiveQueryEnd - effectiveQueryStart;
+            double exactCandidates = 0.0;
+            double childHits = 0.0;
+            if (evaluatedQueries == 0)
+            {
+                effectiveQueryStart = 0;
+                effectiveQueryEnd = cache.queryCount;
+                evaluatedQueries = cache.queryCount;
+            }
+            for (int i = effectiveQueryStart; i < effectiveQueryEnd; i++)
             {
                 PowerDistanceTransform.Interval raw1 =
                         PowerDistanceTransform.queryDistanceInterval(cache.queryDistances1[i],
@@ -210,33 +265,47 @@ public class PowerDistanceBoundaryOptimizer
                     double low = partition == 0 ? Double.NEGATIVE_INFINITY : thresholds[partition - 1];
                     double high = partition == counts.partitionSizes.length - 1
                             ? Double.POSITIVE_INFINITY : thresholds[partition];
-                    boolean intersects = !(bounds.getHigh() < low - comparisonEpsilon
-                            || bounds.getLow() > high + comparisonEpsilon);
-                    intersects = intersects && rawIntersects(childRanges, partition,
-                            raw1, raw2, comparisonEpsilon);
-                    if (intersects)
-                    {
-                        visited += counts.partitionSizes[partition];
-                    }
-                    else
+                    boolean rawDisjoint = !rawIntersects(childRanges, partition,
+                            raw1, raw2, config.getComparisonEpsilon());
+                    boolean scoreDisjoint = bounds.getHigh() < low - config.getComparisonEpsilon()
+                            || bounds.getLow() > high + config.getComparisonEpsilon();
+                    if (rawDisjoint || scoreDisjoint)
                     {
                         queryMargin += finiteMargin(distanceToInterval(bounds, low, high));
+                        continue;
                     }
+                    if (resultAll(cache, childRanges, partition, i,
+                            config.getComparisonEpsilon()))
+                    {
+                        childHits += 1.0;
+                        continue;
+                    }
+                    visited += counts.partitionSizes[partition];
+                    childHits += 1.0;
+                    exactCandidates += leafSurvivorCount(cache, partitions, partition, i);
                 }
                 score += 1.0 - ((double) visited / (double) scores.length);
                 margin += queryMargin;
             }
-            score /= cache.queryCount;
-            margin /= cache.queryCount;
+            score /= evaluatedQueries;
+            margin /= evaluatedQueries;
+            estimatedDistanceCost = exactCandidates / evaluatedQueries;
+            childHitPenalty = childHits / evaluatedQueries;
+            boxPenalty = boxPenalty(childRanges);
+            score = 1.0 - estimatedDistanceCost / Math.max(1.0, scores.length);
+            score -= config.getBoxPenaltyWeight() * boxPenalty;
+            score -= config.getChildHitPenaltyWeight() * childHitPenalty;
         }
         else
         {
             score = balanceScore(counts.partitionSizes);
             margin = dataMargin(scores, thresholds);
+            estimatedDistanceCost = scores.length * (1.0 - score);
         }
-        return new Result(rho, w1, w2, thresholds, counts.partitionSizes,
+        return new Candidate(transform, rho, w1, w2, thresholds, counts, scores,
                 queryAware, score, balanceScore(counts.partitionSizes),
-                margin, true, false);
+                margin, estimatedDistanceCost, boxPenalty, childHitPenalty,
+                false);
     }
 
     private static double[][][] childPivotDistanceRanges(double[] distances1,
@@ -330,11 +399,53 @@ public class PowerDistanceBoundaryOptimizer
         return true;
     }
 
-    private static boolean isBetter(Result candidate, Result best)
+    private static int trainingEnd(DistanceCache cache,
+                                   PowerDistanceLearningConfig config)
+    {
+        if (!cache.hasQueries())
+        {
+            return 0;
+        }
+        if (cache.queryCount <= 1 || config.getValidationFraction() <= 0.0)
+        {
+            return cache.queryCount;
+        }
+        int validationCount = (int) Math.round(cache.queryCount
+                * config.getValidationFraction());
+        validationCount = Math.max(1, Math.min(cache.queryCount - 1, validationCount));
+        return cache.queryCount - validationCount;
+    }
+
+    private static void offerTopCandidate(List<Candidate> candidates,
+                                          Candidate candidate,
+                                          int limit)
+    {
+        int insertAt = 0;
+        while (insertAt < candidates.size()
+                && !isBetter(candidate, candidates.get(insertAt)))
+        {
+            insertAt++;
+        }
+        candidates.add(insertAt, candidate);
+        while (candidates.size() > limit)
+        {
+            candidates.remove(candidates.size() - 1);
+        }
+    }
+
+    private static boolean isBetter(Candidate candidate, Candidate best)
     {
         if (best == null)
         {
             return true;
+        }
+        if (candidate.estimatedDistanceCost < best.estimatedDistanceCost - BETTER_EPS)
+        {
+            return true;
+        }
+        if (candidate.estimatedDistanceCost > best.estimatedDistanceCost + BETTER_EPS)
+        {
+            return false;
         }
         if (candidate.score > best.score + BETTER_EPS)
         {
@@ -353,6 +464,128 @@ public class PowerDistanceBoundaryOptimizer
             return false;
         }
         return candidate.marginScore > best.marginScore + BETTER_EPS;
+    }
+
+    private static int[] partitionIndexes(double[] scores, double[] thresholds)
+    {
+        int[] partitions = new int[scores.length];
+        for (int i = 0; i < scores.length; i++)
+        {
+            partitions[i] = partitionIndex(scores[i], thresholds);
+        }
+        return partitions;
+    }
+
+    private static boolean resultAll(DistanceCache cache,
+                                     double[][][] childRanges,
+                                     int partition,
+                                     int queryIndex,
+                                     double eps)
+    {
+        return cache.queryDistances1[queryIndex] + childRanges[partition][0][1]
+                <= cache.queryRadius + eps
+                || cache.queryDistances2[queryIndex] + childRanges[partition][1][1]
+                <= cache.queryRadius + eps;
+    }
+
+    private static int leafSurvivorCount(DistanceCache cache,
+                                         int[] partitions,
+                                         int partition,
+                                         int queryIndex)
+    {
+        int count = 0;
+        for (int i = 0; i < partitions.length; i++)
+        {
+            if (partitions[i] != partition)
+            {
+                continue;
+            }
+            if (Math.abs(cache.queryDistances1[queryIndex] - cache.dataDistances1[i])
+                    <= cache.queryRadius
+                    && Math.abs(cache.queryDistances2[queryIndex] - cache.dataDistances2[i])
+                    <= cache.queryRadius)
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static double boxPenalty(double[][][] childRanges)
+    {
+        if (childRanges.length == 0)
+        {
+            return 0.0;
+        }
+        double rootWidth1 = 0.0;
+        double rootWidth2 = 0.0;
+        double rootLow1 = Double.POSITIVE_INFINITY;
+        double rootHigh1 = Double.NEGATIVE_INFINITY;
+        double rootLow2 = Double.POSITIVE_INFINITY;
+        double rootHigh2 = Double.NEGATIVE_INFINITY;
+        for (double[][] childRange : childRanges)
+        {
+            rootLow1 = Math.min(rootLow1, childRange[0][0]);
+            rootHigh1 = Math.max(rootHigh1, childRange[0][1]);
+            rootLow2 = Math.min(rootLow2, childRange[1][0]);
+            rootHigh2 = Math.max(rootHigh2, childRange[1][1]);
+        }
+        if (Double.isFinite(rootLow1) && Double.isFinite(rootHigh1))
+        {
+            rootWidth1 = Math.max(0.0, rootHigh1 - rootLow1);
+        }
+        if (Double.isFinite(rootLow2) && Double.isFinite(rootHigh2))
+        {
+            rootWidth2 = Math.max(0.0, rootHigh2 - rootLow2);
+        }
+        double normalizer = Math.max(1.0, rootWidth1 * rootWidth2);
+        double areaSum = 0.0;
+        for (double[][] childRange : childRanges)
+        {
+            areaSum += normalizedArea(childRange, normalizer);
+        }
+        double overlap = 0.0;
+        for (int i = 0; i < childRanges.length; i++)
+        {
+            for (int j = i + 1; j < childRanges.length; j++)
+            {
+                overlap += overlapArea(childRanges[i], childRanges[j]) / normalizer;
+            }
+        }
+        return areaSum + overlap;
+    }
+
+    private static double normalizedArea(double[][] range, double normalizer)
+    {
+        double width1 = finiteWidth(range[0]);
+        double width2 = finiteWidth(range[1]);
+        return (width1 * width2) / normalizer;
+    }
+
+    private static double overlapArea(double[][] a, double[][] b)
+    {
+        double width1 = overlapWidth(a[0], b[0]);
+        double width2 = overlapWidth(a[1], b[1]);
+        return width1 * width2;
+    }
+
+    private static double finiteWidth(double[] range)
+    {
+        if (!Double.isFinite(range[0]) || !Double.isFinite(range[1]))
+        {
+            return 0.0;
+        }
+        return Math.max(0.0, range[1] - range[0]);
+    }
+
+    private static double overlapWidth(double[] a, double[] b)
+    {
+        if (!Double.isFinite(a[0]) || !Double.isFinite(a[1])
+                || !Double.isFinite(b[0]) || !Double.isFinite(b[1]))
+        {
+            return 0.0;
+        }
+        return Math.max(0.0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]));
     }
 
     private static double[] transformDistances(double[] distances,
@@ -430,9 +663,10 @@ public class PowerDistanceBoundaryOptimizer
         List<double[]> candidates = new ArrayList<>();
         if (numPartitions == 2)
         {
+            addUniqueThresholds(candidates, new double[]{quantile(sorted, 0.50)});
             for (double quantile : configuredQuantiles)
             {
-                candidates.add(new double[]{quantile(sorted, quantile)});
+                addUniqueThresholds(candidates, new double[]{quantile(sorted, quantile)});
             }
             return candidates;
         }
@@ -636,12 +870,17 @@ public class PowerDistanceBoundaryOptimizer
         private final double score;
         private final double balanceScore;
         private final double marginScore;
+        private final double estimatedDistanceCost;
+        private final double boxPenalty;
+        private final double childHitPenalty;
         private final boolean valid;
         private final boolean fallback;
 
         public Result(double rho, double w1, double w2, double[] thresholds,
                       int[] partitionSizes, boolean queryAware,
                       double score, double balanceScore, double marginScore,
+                      double estimatedDistanceCost, double boxPenalty,
+                      double childHitPenalty,
                       boolean valid, boolean fallback)
         {
             this.rho = rho;
@@ -653,6 +892,9 @@ public class PowerDistanceBoundaryOptimizer
             this.score = score;
             this.balanceScore = balanceScore;
             this.marginScore = marginScore;
+            this.estimatedDistanceCost = estimatedDistanceCost;
+            this.boxPenalty = boxPenalty;
+            this.childHitPenalty = childHitPenalty;
             this.valid = valid;
             this.fallback = fallback;
         }
@@ -717,6 +959,21 @@ public class PowerDistanceBoundaryOptimizer
             return marginScore;
         }
 
+        public double getEstimatedDistanceCost()
+        {
+            return estimatedDistanceCost;
+        }
+
+        public double getBoxPenalty()
+        {
+            return boxPenalty;
+        }
+
+        public double getChildHitPenalty()
+        {
+            return childHitPenalty;
+        }
+
         public boolean isValid()
         {
             return valid;
@@ -730,6 +987,66 @@ public class PowerDistanceBoundaryOptimizer
         public String directionSummary()
         {
             return "(" + w1 + "," + w2 + ")";
+        }
+    }
+
+    private static class Candidate
+    {
+        private final PowerDistanceTransform transform;
+        private final double rho;
+        private final double w1;
+        private final double w2;
+        private final double[] thresholds;
+        private final Counts counts;
+        private final double[] scores;
+        private final boolean queryAware;
+        private final double score;
+        private final double balanceScore;
+        private final double marginScore;
+        private final double estimatedDistanceCost;
+        private final double boxPenalty;
+        private final double childHitPenalty;
+        private final boolean fallback;
+
+        private Candidate(PowerDistanceTransform transform,
+                          double rho,
+                          double w1,
+                          double w2,
+                          double[] thresholds,
+                          Counts counts,
+                          double[] scores,
+                          boolean queryAware,
+                          double score,
+                          double balanceScore,
+                          double marginScore,
+                          double estimatedDistanceCost,
+                          double boxPenalty,
+                          double childHitPenalty,
+                          boolean fallback)
+        {
+            this.transform = transform;
+            this.rho = rho;
+            this.w1 = w1;
+            this.w2 = w2;
+            this.thresholds = thresholds.clone();
+            this.counts = counts;
+            this.scores = scores;
+            this.queryAware = queryAware;
+            this.score = score;
+            this.balanceScore = balanceScore;
+            this.marginScore = marginScore;
+            this.estimatedDistanceCost = estimatedDistanceCost;
+            this.boxPenalty = boxPenalty;
+            this.childHitPenalty = childHitPenalty;
+            this.fallback = fallback;
+        }
+
+        private Result toResult()
+        {
+            return new Result(rho, w1, w2, thresholds, counts.partitionSizes,
+                    queryAware, score, balanceScore, marginScore,
+                    estimatedDistanceCost, boxPenalty, childHitPenalty,
+                    true, fallback);
         }
     }
 
