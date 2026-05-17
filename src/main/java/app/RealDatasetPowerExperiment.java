@@ -1,12 +1,15 @@
 package app;
 
 import algorithms.datapartition.GHPartitionMethods;
+import algorithms.datapartition.LogDistanceLearnedPartitionMethod;
+import algorithms.datapartition.LogDistanceLinearPartitionMethod;
 import algorithms.datapartition.PowerDistanceLearnedPartitionMethod;
 import algorithms.datapartition.PowerDistanceLinearPartitionMethod;
 import algorithms.datapartition.RGHPartitionMethods;
 import algorithms.datapartition.VPPartitionMethods;
 import algorithms.pivotselection.PivotSelectionMethod;
 import algorithms.pivotselection.PivotSelectionMethods;
+import algorithms.pivotselection.LogDistanceMedoidPairPivotSelectionMethod;
 import algorithms.pivotselection.PowerDistanceMedoidPairPivotSelectionMethod;
 import db.TableManager;
 import db.table.DNATable;
@@ -21,6 +24,9 @@ import db.type.IndexObject;
 import index.powerdistance.PowerDistanceBoundaryOptimizer;
 import index.powerdistance.PowerDistanceLearningConfig;
 import index.powerdistance.PowerDistanceTransform;
+import index.logdistance.LogDistanceBoundaryOptimizer;
+import index.logdistance.LogDistanceLearningConfig;
+import index.logdistance.LogDistanceTransform;
 import index.search.Cursor;
 import index.search.RangeQuery;
 import index.type.HierarchicalPivotSelectionMode;
@@ -58,11 +64,15 @@ public class RealDatasetPowerExperiment
         int maxLeafSize = Integer.parseInt(options.getOrDefault("maxLeafSize", "20"));
         int powerFanout = Integer.parseInt(options.getOrDefault("powerFanout", "2"));
         boolean includeLearned = Boolean.parseBoolean(options.getOrDefault("includeLearned", "false"));
+        boolean includePowerFixed = Boolean.parseBoolean(options.getOrDefault("includePowerFixed", "true"));
+        boolean includeLog = Boolean.parseBoolean(options.getOrDefault("includeLog", "false"));
+        boolean includeLearnedLog = Boolean.parseBoolean(options.getOrDefault("includeLearnedLog", "false"));
         boolean verifyLinearScan = Boolean.parseBoolean(options.getOrDefault("verifyLinearScan", "false"));
         double[] rhos = parseDoubles(options.getOrDefault("rhoList", "-4,-2,-1,1,2,4"));
         PivotSelectionMethod pivotSelectionMethod =
                 PivotSelectionMethods.valueOf(options.getOrDefault("pivotSelection", "FFT"));
         PowerDistanceLearningConfig learningConfig = learningConfig(options);
+        LogDistanceLearningConfig logLearningConfig = logLearningConfig(options);
 
         String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now());
         Path runDir = Paths.get(options.getOrDefault("outDir",
@@ -83,7 +93,8 @@ public class RealDatasetPowerExperiment
                 List<? extends IndexObject> queries = dataset.loadQueries(querySize);
                 List<IndexSpec> specs = indexSpecs(rhos, includeLearned, learningConfig,
                         trainingQueries(queries, learningConfig), dataset.radius,
-                        powerFanout);
+                        powerFanout, includePowerFixed, includeLog, includeLearnedLog,
+                        logLearningConfig, logTrainingQueries(queries, logLearningConfig));
                 for (IndexSpec spec : specs)
                 {
                     String indexPrefix = indexDir.resolve(dataset.name + "_"
@@ -207,27 +218,55 @@ public class RealDatasetPowerExperiment
     private static List<IndexSpec> indexSpecs(double[] rhos, boolean includeLearned,
                                               PowerDistanceLearningConfig learningConfig,
                                               List<? extends IndexObject> trainingQueries,
-                                              double radius, int powerFanout)
+                                              double radius, int powerFanout,
+                                              boolean includePowerFixed,
+                                              boolean includeLog,
+                                              boolean includeLearnedLog,
+                                              LogDistanceLearningConfig logLearningConfig,
+                                              List<? extends IndexObject> logTrainingQueries)
     {
         List<IndexSpec> specs = new ArrayList<>();
         specs.add(IndexSpec.gh());
         specs.add(IndexSpec.vp(1));
         specs.add(IndexSpec.vp(2));
         specs.add(IndexSpec.rgh());
-        for (double rho : rhos)
+        if (includePowerFixed)
         {
-            specs.add(IndexSpec.fixedPower(rho, powerFanout));
+            for (double rho : rhos)
+            {
+                specs.add(IndexSpec.fixedPower(rho, powerFanout));
+            }
         }
         if (includeLearned)
         {
             specs.add(IndexSpec.learnedPower(learningConfig, trainingQueries, radius,
                     powerFanout));
         }
+        if (includeLog)
+        {
+            specs.add(IndexSpec.fixedLog());
+        }
+        if (includeLearnedLog)
+        {
+            specs.add(IndexSpec.learnedLog(logLearningConfig, logTrainingQueries, radius));
+        }
         return specs;
     }
 
     private static List<? extends IndexObject> trainingQueries(List<? extends IndexObject> queries,
                                                                PowerDistanceLearningConfig config)
+    {
+        int limit = Math.min(queries.size(), config.getTrainingQuerySampleSize());
+        List<IndexObject> sample = new ArrayList<>(limit);
+        for (int i = 0; i < limit; i++)
+        {
+            sample.add(queries.get(i));
+        }
+        return sample;
+    }
+
+    private static List<? extends IndexObject> logTrainingQueries(List<? extends IndexObject> queries,
+                                                                  LogDistanceLearningConfig config)
     {
         int limit = Math.min(queries.size(), config.getTrainingQuerySampleSize());
         List<IndexObject> sample = new ArrayList<>(limit);
@@ -510,6 +549,67 @@ public class RealDatasetPowerExperiment
                 Double.parseDouble(options.getOrDefault("childHitPenaltyWeight", defaultChildHitPenaltyWeight)));
     }
 
+    private static LogDistanceLearningConfig logLearningConfig(Map<String, String> options)
+    {
+        String preset = options.getOrDefault("logLearningPreset",
+                options.getOrDefault("learningPreset", "medium")).toLowerCase(Locale.ROOT);
+        String defaultTauQuantiles = "0.35,0.40,0.45,0.50,0.55,0.60,0.65";
+        String defaultAngleCount = "12";
+        String defaultTrainingQuerySampleSize = "128";
+        String defaultMedoidCandidateCount = "6";
+        String defaultMedoidIterations = "1";
+        String defaultValidationFraction = "0.0";
+        String defaultTopCandidates = "16";
+        String defaultBoxPenaltyWeight = "0.0001";
+        String defaultChildHitPenaltyWeight = "0.0001";
+        if ("strong".equals(preset) || "costaware".equals(preset))
+        {
+            defaultAngleCount = "16";
+            defaultTrainingQuerySampleSize = "256";
+            defaultMedoidCandidateCount = "8";
+            defaultMedoidIterations = "2";
+        }
+        if ("costaware".equals(preset))
+        {
+            defaultValidationFraction = "0.30";
+        }
+        else if (!"medium".equals(preset) && !"fast".equals(preset)
+                && !"strong".equals(preset))
+        {
+            throw new IllegalArgumentException("logLearningPreset must be fast, medium, strong, or costAware");
+        }
+        if ("fast".equals(preset))
+        {
+            defaultTauQuantiles = "0.4,0.5,0.6";
+            defaultAngleCount = "8";
+            defaultTrainingQuerySampleSize = "64";
+            defaultMedoidCandidateCount = "4";
+        }
+        return new LogDistanceLearningConfig(
+                Integer.parseInt(options.getOrDefault("logAngleCount",
+                        options.getOrDefault("angleCount", defaultAngleCount))),
+                parseDoubles(options.getOrDefault("logTauQuantiles",
+                        options.getOrDefault("tauQuantiles", defaultTauQuantiles))),
+                Double.parseDouble(options.getOrDefault("logMinBalance",
+                        options.getOrDefault("minBalance", "0.25"))),
+                Integer.parseInt(options.getOrDefault("logTrainingQuerySampleSize",
+                        options.getOrDefault("trainingQuerySampleSize", defaultTrainingQuerySampleSize))),
+                Integer.parseInt(options.getOrDefault("logMedoidCandidateCount",
+                        options.getOrDefault("medoidCandidateCount", defaultMedoidCandidateCount))),
+                Integer.parseInt(options.getOrDefault("logMedoidIterations",
+                        options.getOrDefault("medoidIterations", defaultMedoidIterations))),
+                LogDistanceTransform.DEFAULT_EPSILON_DISTANCE,
+                LogDistanceTransform.DEFAULT_COMPARISON_EPSILON,
+                Double.parseDouble(options.getOrDefault("logValidationFraction",
+                        options.getOrDefault("validationFraction", defaultValidationFraction))),
+                Integer.parseInt(options.getOrDefault("logTopCandidates",
+                        options.getOrDefault("topCandidates", defaultTopCandidates))),
+                Double.parseDouble(options.getOrDefault("logBoxPenaltyWeight",
+                        options.getOrDefault("boxPenaltyWeight", defaultBoxPenaltyWeight))),
+                Double.parseDouble(options.getOrDefault("logChildHitPenaltyWeight",
+                        options.getOrDefault("childHitPenaltyWeight", defaultChildHitPenaltyWeight))));
+    }
+
     private static class DatasetSpec
     {
         private final String name;
@@ -650,13 +750,16 @@ public class RealDatasetPowerExperiment
         private final int vpPivots;
         private final int powerFanout;
         private final PowerDistanceLearningConfig learningConfig;
+        private final LogDistanceLearningConfig logLearningConfig;
         private final List<? extends IndexObject> trainingQueries;
         private final double queryRadius;
         private PowerDistanceLearnedPartitionMethod learnedPartitionMethod;
+        private LogDistanceLearnedPartitionMethod learnedLogPartitionMethod;
 
         private IndexSpec(String indexName, double rho, int vpPivots,
                           int powerFanout,
                           PowerDistanceLearningConfig learningConfig,
+                          LogDistanceLearningConfig logLearningConfig,
                           List<? extends IndexObject> trainingQueries,
                           double queryRadius)
         {
@@ -665,31 +768,32 @@ public class RealDatasetPowerExperiment
             this.vpPivots = vpPivots;
             this.powerFanout = powerFanout;
             this.learningConfig = learningConfig;
+            this.logLearningConfig = logLearningConfig;
             this.trainingQueries = trainingQueries;
             this.queryRadius = queryRadius;
         }
 
         static IndexSpec gh()
         {
-            return new IndexSpec("GH", Double.NaN, 0, 0, null, null, Double.NaN);
+            return new IndexSpec("GH", Double.NaN, 0, 0, null, null, null, Double.NaN);
         }
 
         static IndexSpec vp(int pivots)
         {
             return new IndexSpec("VP" + pivots, Double.NaN, pivots, 0,
-                    null, null, Double.NaN);
+                    null, null, null, Double.NaN);
         }
 
         static IndexSpec rgh()
         {
-            return new IndexSpec("RGH", Double.NaN, 0, 0, null, null, Double.NaN);
+            return new IndexSpec("RGH", Double.NaN, 0, 0, null, null, null, Double.NaN);
         }
 
         static IndexSpec fixedPower(double rho, int powerFanout)
         {
             return new IndexSpec("POWER_FIXED_f" + powerFanout + "_rho_" + rho,
                     rho, 0, powerFanout,
-                    null, null, Double.NaN);
+                    null, null, null, Double.NaN);
         }
 
         static IndexSpec learnedPower(PowerDistanceLearningConfig config,
@@ -698,7 +802,21 @@ public class RealDatasetPowerExperiment
         {
             return new IndexSpec("POWER_LEARNED_MEDOID_f" + powerFanout,
                     Double.NaN, 0, powerFanout,
-                    config, trainingQueries, queryRadius);
+                    config, null, trainingQueries, queryRadius);
+        }
+
+        static IndexSpec fixedLog()
+        {
+            return new IndexSpec("LOG_FIXED", Double.NaN, 0, 0,
+                    null, null, null, Double.NaN);
+        }
+
+        static IndexSpec learnedLog(LogDistanceLearningConfig config,
+                                    List<? extends IndexObject> trainingQueries,
+                                    double queryRadius)
+        {
+            return new IndexSpec("LOG_LEARNED_MEDOID", Double.NaN, 0, 0,
+                    null, config, trainingQueries, queryRadius);
         }
 
         void build(Table table, PivotSelectionMethod pivotSelectionMethod,
@@ -737,6 +855,22 @@ public class RealDatasetPowerExperiment
                         new PowerDistanceLinearPartitionMethod(rho, 1.0, -1.0),
                         powerFanout, maxLeafSize, HierarchicalPivotSelectionMode.LOCAL, null);
             }
+            else if ("LOG_FIXED".equals(indexName))
+            {
+                table.buildLogDistanceIndex(pivotSelectionMethod,
+                        new LogDistanceLinearPartitionMethod(1.0, -1.0),
+                        maxLeafSize, HierarchicalPivotSelectionMode.LOCAL, null);
+            }
+            else if ("LOG_LEARNED_MEDOID".equals(indexName))
+            {
+                learnedLogPartitionMethod = new LogDistanceLearnedPartitionMethod(
+                        logLearningConfig, trainingQueries, queryRadius);
+                table.buildLogDistanceIndex(
+                        new LogDistanceMedoidPairPivotSelectionMethod(
+                                logLearningConfig, trainingQueries, queryRadius),
+                        learnedLogPartitionMethod, maxLeafSize,
+                        HierarchicalPivotSelectionMode.LOCAL, null);
+            }
             else
             {
                 throw new IllegalStateException("unknown index: " + indexName);
@@ -759,7 +893,13 @@ public class RealDatasetPowerExperiment
         {
             PowerDistanceBoundaryOptimizer.Result model =
                     learnedPartitionMethod == null ? null : learnedPartitionMethod.getRootModel();
-            return model == null ? "" : model.getW1() + ";" + model.getW2();
+            if (model != null)
+            {
+                return model.getW1() + ";" + model.getW2();
+            }
+            LogDistanceBoundaryOptimizer.Result logModel =
+                    learnedLogPartitionMethod == null ? null : learnedLogPartitionMethod.getRootModel();
+            return logModel == null ? "" : logModel.directionSummary();
         }
     }
 

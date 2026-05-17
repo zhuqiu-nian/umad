@@ -1,6 +1,7 @@
 package index.logdistance;
 
 import algorithms.datapartition.LogDistanceLinearPartitionMethod;
+import algorithms.datapartition.LogDistanceLearnedPartitionMethod;
 import db.TableManager;
 import db.table.DoubleVectorTable;
 import db.type.DoubleVector;
@@ -67,6 +68,42 @@ public class LogDistanceIndexCorrectnessTest
 
             index.destroy();
         }
+    }
+
+    @Test
+    public void learnedRangeSearchMatchesLinearScan() throws IOException
+    {
+        String managerPrefix = "target/test-index/ld_learned_manager_"
+                + System.nanoTime();
+        TableManager tableManager = TableManager.getTableManager(managerPrefix);
+        File dataFile = writeVectorFile(sampleData());
+        DoubleVectorTable table = new DoubleVectorTable(dataFile.getPath(),
+                "ld_learned_table_" + System.nanoTime(), 84, 2);
+        tableManager.putTable(table);
+        List<? extends IndexObject> data = table.getData();
+        List<IndexObject> original = new ArrayList<>();
+        original.addAll(data);
+        IndexObject[] pivots = new IndexObject[]{data.get(0), data.get(1)};
+        Metric metric = LMetric.EuclideanDistanceMetric;
+        List<IndexObject> queries = queryData();
+        String prefix = "target/test-index/ld_learned_" + System.nanoTime();
+        new File("target/test-index").mkdirs();
+
+        LogDistanceIndex index = new LogDistanceIndex(prefix, data, metric, 8,
+                HierarchicalPivotSelectionMode.GLOBAL, null,
+                new LogDistanceLearnedPartitionMethod(queries, 0.35), pivots);
+        index.buildTree();
+
+        for (IndexObject query : queries)
+        {
+            for (double radius : new double[]{0.0, 0.15, 0.35, 0.75})
+            {
+                assertEquals(linear(metric, original, query, radius),
+                        indexed(index, query, radius));
+            }
+        }
+
+        index.destroy();
     }
 
     private List<double[]> sampleData()

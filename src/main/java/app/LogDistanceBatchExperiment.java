@@ -1,13 +1,17 @@
 package app;
 
 import algorithms.datapartition.LogDistanceLinearPartitionMethod;
+import algorithms.datapartition.LogDistanceLearnedPartitionMethod;
 import algorithms.pivotselection.PivotSelectionMethod;
 import algorithms.pivotselection.PivotSelectionMethods;
+import algorithms.pivotselection.LogDistanceMedoidPairPivotSelectionMethod;
 import db.TableManager;
 import db.table.DoubleVectorTable;
 import db.table.Table;
 import db.type.DoubleIndexObjectPair;
 import db.type.IndexObject;
+import index.logdistance.LogDistanceLearningConfig;
+import index.logdistance.LogDistanceTransform;
 import index.search.Cursor;
 import index.search.RangeQuery;
 import index.type.HierarchicalPivotSelectionMode;
@@ -48,6 +52,9 @@ public class LogDistanceBatchExperiment
         PivotSelectionMethod pivotSelectionMethod = PivotSelectionMethods.valueOf(options.getOrDefault("pivotSelection", "FFT"));
         String pivotFile = options.get("pivotFile");
         double epsilonDistance = Double.parseDouble(options.getOrDefault("epsilonDistance", "1e-12"));
+        boolean learned = Boolean.parseBoolean(options.getOrDefault("learned", "false"));
+        boolean medoidPivots = Boolean.parseBoolean(options.getOrDefault("medoidPivots", "false"));
+        LogDistanceLearningConfig learningConfig = learningConfig(options, epsilonDistance);
 
         TableManager tableManager = TableManager.getTableManager("LD_BATCH_" + System.nanoTime());
         Table queryTable = new DoubleVectorTable(querySet, "ld_query", querySize, dim);
@@ -71,10 +78,25 @@ public class LogDistanceBatchExperiment
         }
 
         long buildStart = System.nanoTime();
-        LogDistanceLinearPartitionMethod partitionMethod =
-                new LogDistanceLinearPartitionMethod(w1, w2, epsilonDistance, 1e-12);
-        IndexBuilder.bulkLoadLogDistanceIndex(dataTable, pivotSelectionMethod,
-                partitionMethod, maxLeafSize, buildMode, fixedPivots);
+        if (learned)
+        {
+            LogDistanceLearnedPartitionMethod partitionMethod =
+                    new LogDistanceLearnedPartitionMethod(learningConfig,
+                            trainingQueries(queries, learningConfig), radii[0]);
+            PivotSelectionMethod buildPivotSelection = medoidPivots && fixedPivots == null
+                    ? new LogDistanceMedoidPairPivotSelectionMethod(learningConfig,
+                    trainingQueries(queries, learningConfig), radii[0])
+                    : pivotSelectionMethod;
+            IndexBuilder.bulkLoadLogDistanceIndex(dataTable, buildPivotSelection,
+                    partitionMethod, maxLeafSize, buildMode, fixedPivots);
+        }
+        else
+        {
+            LogDistanceLinearPartitionMethod partitionMethod =
+                    new LogDistanceLinearPartitionMethod(w1, w2, epsilonDistance, 1e-12);
+            IndexBuilder.bulkLoadLogDistanceIndex(dataTable, pivotSelectionMethod,
+                    partitionMethod, maxLeafSize, buildMode, fixedPivots);
+        }
         long buildMs = (System.nanoTime() - buildStart) / 1_000_000L;
 
         CountedMetric countedMetric = (CountedMetric) dataTable.getMetric();
@@ -154,12 +176,39 @@ public class LogDistanceBatchExperiment
         return values;
     }
 
+    private static List<? extends IndexObject> trainingQueries(List<? extends IndexObject> queries,
+                                                               LogDistanceLearningConfig config)
+    {
+        int limit = Math.min(queries.size(), config.getTrainingQuerySampleSize());
+        return queries.subList(0, limit);
+    }
+
+    private static LogDistanceLearningConfig learningConfig(Map<String, String> options,
+                                                            double epsilonDistance)
+    {
+        return new LogDistanceLearningConfig(
+                Integer.parseInt(options.getOrDefault("angleCount", "16")),
+                parseDoubles(options.getOrDefault("tauQuantiles",
+                        "0.35,0.40,0.45,0.50,0.55,0.60,0.65")),
+                Double.parseDouble(options.getOrDefault("minBalance", "0.25")),
+                Integer.parseInt(options.getOrDefault("trainingQuerySampleSize", "256")),
+                Integer.parseInt(options.getOrDefault("medoidCandidateCount", "8")),
+                Integer.parseInt(options.getOrDefault("medoidIterations", "2")),
+                epsilonDistance,
+                LogDistanceTransform.DEFAULT_COMPARISON_EPSILON,
+                Double.parseDouble(options.getOrDefault("validationFraction", "0.30")),
+                Integer.parseInt(options.getOrDefault("topCandidates", "16")),
+                Double.parseDouble(options.getOrDefault("boxPenaltyWeight", "0.0001")),
+                Double.parseDouble(options.getOrDefault("childHitPenaltyWeight", "0.0001")));
+    }
+
     private static void printUsage()
     {
         System.out.println("Usage: java app.LogDistanceBatchExperiment "
                 + "--dataset data.txt --querySet query.txt --dim 2 "
                 + "--dataSize 1000 --querySize 100 --radii 0.05,0.1 "
                 + "[--w1 1.0 --w2 -1.0 --pivotMode LOCAL --pivotSelection FFT "
-                + "--pivotFile pivots.txt --maxLeafSize 20 --epsilonDistance 1e-12]");
+                + "--pivotFile pivots.txt --maxLeafSize 20 --epsilonDistance 1e-12 "
+                + "--learned true --medoidPivots true]");
     }
 }
