@@ -63,9 +63,12 @@ public class RealDatasetPowerExperiment
         int querySize = Integer.parseInt(options.getOrDefault("querySize", "3000"));
         int maxLeafSize = Integer.parseInt(options.getOrDefault("maxLeafSize", "20"));
         int powerFanout = Integer.parseInt(options.getOrDefault("powerFanout", "2"));
+        boolean includeTraditional = Boolean.parseBoolean(options.getOrDefault("includeTraditional", "true"));
         boolean includeLearned = Boolean.parseBoolean(options.getOrDefault("includeLearned", "false"));
         boolean includePowerFixed = Boolean.parseBoolean(options.getOrDefault("includePowerFixed", "true"));
         boolean includeLog = Boolean.parseBoolean(options.getOrDefault("includeLog", "false"));
+        boolean includeFixedLog = Boolean.parseBoolean(options.getOrDefault("includeFixedLog",
+                Boolean.toString(includeLog)));
         boolean includeLearnedLog = Boolean.parseBoolean(options.getOrDefault("includeLearnedLog", "false"));
         boolean verifyLinearScan = Boolean.parseBoolean(options.getOrDefault("verifyLinearScan", "false"));
         double[] rhos = parseDoubles(options.getOrDefault("rhoList", "-4,-2,-1,1,2,4"));
@@ -93,7 +96,7 @@ public class RealDatasetPowerExperiment
                 List<? extends IndexObject> queries = dataset.loadQueries(querySize);
                 List<IndexSpec> specs = indexSpecs(rhos, includeLearned, learningConfig,
                         trainingQueries(queries, learningConfig), dataset.radius,
-                        powerFanout, includePowerFixed, includeLog, includeLearnedLog,
+                        powerFanout, includeTraditional, includePowerFixed, includeFixedLog, includeLearnedLog,
                         logLearningConfig, logTrainingQueries(queries, logLearningConfig));
                 for (IndexSpec spec : specs)
                 {
@@ -219,6 +222,7 @@ public class RealDatasetPowerExperiment
                                               PowerDistanceLearningConfig learningConfig,
                                               List<? extends IndexObject> trainingQueries,
                                               double radius, int powerFanout,
+                                              boolean includeTraditional,
                                               boolean includePowerFixed,
                                               boolean includeLog,
                                               boolean includeLearnedLog,
@@ -226,10 +230,13 @@ public class RealDatasetPowerExperiment
                                               List<? extends IndexObject> logTrainingQueries)
     {
         List<IndexSpec> specs = new ArrayList<>();
-        specs.add(IndexSpec.gh());
-        specs.add(IndexSpec.vp(1));
-        specs.add(IndexSpec.vp(2));
-        specs.add(IndexSpec.rgh());
+        if (includeTraditional)
+        {
+            specs.add(IndexSpec.gh());
+            specs.add(IndexSpec.vp(1));
+            specs.add(IndexSpec.vp(2));
+            specs.add(IndexSpec.rgh());
+        }
         if (includePowerFixed)
         {
             for (double rho : rhos)
