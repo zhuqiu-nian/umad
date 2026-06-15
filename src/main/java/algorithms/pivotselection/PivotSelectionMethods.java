@@ -23,7 +23,7 @@ import java.util.function.ToIntFunction;
  * @author Rui Mao, Willlard
  * @version 2006.08.03
  */
-public enum PivotSelectionMethods implements PivotSelectionMethod
+public enum PivotSelectionMethods implements EvaluationPivotSelectionMethod
 {
     /**
      * 使用 Farthest-First-Traversal 选择数据的角落点
@@ -565,6 +565,32 @@ public enum PivotSelectionMethods implements PivotSelectionMethod
                     ret[i] = data.indexOf(result[i]);
                 }
                 return ret;
+            }
+        },
+
+    /**
+     * Selects a two-pivot pair that pushes AT pivot-space data away from the
+     * lower-left dense-boundary region.
+     */
+    AT_RIGHT_UP
+        {
+            private final PivotSelectionMethod delegate = new ATRightUpPivotSelectionMethod();
+
+            public int[] selectPivots(Metric metric, List<? extends IndexObject> data, int numPivots)
+            {
+                return delegate.selectPivots(metric, data, numPivots);
+            }
+
+            public int[] selectPivots(Metric metric, List<? extends IndexObject> data, int first, int dataSize, int numPivots)
+            {
+                return delegate.selectPivots(metric, data, first, dataSize, numPivots);
+            }
+
+            public int[] selectPivots(Metric metric, List<? extends IndexObject> candidateSet,
+                                      List<? extends IndexObject> evaluationSet, int numPivots)
+            {
+                return ((EvaluationPivotSelectionMethod) delegate)
+                        .selectPivots(metric, candidateSet, evaluationSet, numPivots);
             }
         }
 

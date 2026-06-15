@@ -1,6 +1,7 @@
 package index.structure;
 
 import algorithms.datapartition.PartitionMethod;
+import algorithms.pivotselection.EvaluationPivotSelectionMethod;
 import algorithms.pivotselection.PivotSelectionMethod;
 import db.type.IndexObject;
 import index.search.ApollonianRangeCursor;
@@ -10,6 +11,7 @@ import index.search.RangeQuery;
 import index.type.HierarchicalPivotSelectionMode;
 import metric.Metric;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -84,6 +86,11 @@ public class ApollonianIndex extends AbstractIndex
     int[] pivotSelection(Metric metric, List<? extends IndexObject> candidateSet,
                          List<? extends IndexObject> evaluationSet, int numPivot)
     {
+        if (pivotSelectionMethod instanceof EvaluationPivotSelectionMethod)
+        {
+            return ((EvaluationPivotSelectionMethod) pivotSelectionMethod)
+                    .selectPivots(metric, candidateSet, evaluationSet, numPivot);
+        }
         return pivotSelectionMethod.selectPivots(metric, candidateSet, numPivot);
     }
 
@@ -96,6 +103,23 @@ public class ApollonianIndex extends AbstractIndex
                                List<? extends IndexObject> data, int numPartitions)
     {
         return partitionMethod.partition(metric, pivotSet, data, numPartitions, maxLeafSize);
+    }
+
+    @Override
+    List<? extends IndexObject> selectPivotCandicateSet(Metric metric, List<? extends IndexObject> data, int pivotCandidateSetSize)
+    {
+        if (pivotCandidateSetSize >= data.size())
+        {
+            return data;
+        }
+
+        List<IndexObject> candidates = new ArrayList<>(pivotCandidateSetSize);
+        for (int i = 0; i < pivotCandidateSetSize; i++)
+        {
+            int index = (int) Math.floor(i * (data.size() - 1.0) / (pivotCandidateSetSize - 1.0));
+            candidates.add(data.get(index));
+        }
+        return candidates;
     }
 
     /**
